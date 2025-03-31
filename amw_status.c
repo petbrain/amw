@@ -64,7 +64,7 @@ static void amw_status_dump(UwValuePtr self, FILE* fp, int first_indent, int nex
     _uw_dump_start(fp, self, first_indent);
     _uw_dump_struct_data(fp, self);
 
-    UwValue desc = uw_status_desc(self);
+    UwValue desc = uw_status_as_string(self);
     UW_CSTRING_LOCAL(desc_cstr, &desc);
     fprintf(fp, " line %u, position %u: %s\n",
             data->line_number, data->position, desc_cstr);
