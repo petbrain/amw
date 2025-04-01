@@ -135,7 +135,8 @@ static inline AmwBlockParserFunc get_custom_parser(AmwParser* parser, UwValuePtr
     return (AmwBlockParserFunc) (parser_func.ptr);
 }
 
-UwResult _amw_parser_error(AmwParser* parser, unsigned line_number, unsigned pos, char* description, ...)
+UwResult _amw_parser_error(AmwParser* parser, char* source_file_name, unsigned source_line_number,
+                           unsigned line_number, unsigned char_pos, char* description, ...)
 {
     UwValue status = uw_create(UwTypeId_AmwStatus);
     // status is UW_SUCCESS by default
@@ -143,19 +144,15 @@ UwResult _amw_parser_error(AmwParser* parser, unsigned line_number, unsigned pos
         return uw_move(&status);
     }
     status.status_code = AMW_PARSE_ERROR;
+    _uw_set_status_location(&status, source_file_name, source_line_number);
     AmwStatusData* status_data = _amw_status_data_ptr(&status);
     status_data->line_number = line_number;;
-    status_data->position = pos;
+    status_data->position = char_pos;
     va_list ap;
     va_start(ap);
     _uw_set_status_desc_ap(&status, description, ap);
     va_end(ap);
     return uw_move(&status);
-}
-
-static inline UwResult parser_error(AmwParser* parser, unsigned pos, char* description)
-{
-    return _amw_parser_error(parser, parser->line_number, pos, description);
 }
 
 bool _amw_end_of_block(UwValuePtr status)
@@ -301,7 +298,7 @@ static UwResult parse_nested_block(AmwParser* parser, unsigned block_pos, AmwBlo
  */
 {
     if (parser->blocklevel >= parser->max_blocklevel) {
-        return parser_error(parser, parser->current_indent, "Too many nested blocks");
+        return amw_parser_error(parser, parser->current_indent, "Too many nested blocks");
     }
 
     // start nested block
@@ -336,7 +333,7 @@ static UwResult parse_nested_block_from_next_line(AmwParser* parser, AmwBlockPar
     parser->block_indent--;
 
     if (_amw_end_of_block(&status)) {
-        return parser_error(parser, parser->current_indent, "Empty block");
+        return amw_parser_error(parser, parser->current_indent, "Empty block");
     }
     if (uw_error(&status)) {
         return uw_move(&status);
@@ -549,7 +546,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
                         pos++;
                         if (end_of_line(line, pos)) {
                             if (i == 0) {
-                                return _amw_parser_error(parser, line_number, pos, "Incomplete octal value");
+                                return amw_parser_error2(parser, line_number, pos, "Incomplete octal value");
                             }
                             break;
                         }
@@ -558,7 +555,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
                             v <<= 3;
                             v += c - '0';
                         } else {
-                            return _amw_parser_error(parser, line_number, pos, "Bad octal value");
+                            return amw_parser_error2(parser, line_number, pos, "Bad octal value");
                         }
                     }
                     append_ok = uw_string_append(&result, v);
@@ -583,7 +580,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
                     for (int i = 0; i < hexlen; i++) {
                         pos++;
                         if (end_of_line(line, pos)) {
-                            return _amw_parser_error(parser, line_number, pos, "Incomplete hexadecimal value");
+                            return amw_parser_error2(parser, line_number, pos, "Incomplete hexadecimal value");
                         }
                         char32_t c = uw_char_at(line, pos);
                         if ('0' <= c && c <= '9') {
@@ -596,7 +593,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
                             v <<= 4;
                             v += c - 'A' + 10;
                         } else {
-                            return _amw_parser_error(parser, line_number, pos, "Bad hexadecimal value");
+                            return amw_parser_error2(parser, line_number, pos, "Bad hexadecimal value");
                         }
                     }
                     append_ok = uw_string_append(&result, v);
@@ -721,7 +718,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
             *end_pos = opening_quote_pos + 1;
         } else {
-            return parser_error(parser, parser->current_indent, "String contains no closing quote");
+            return amw_parser_error(parser, parser->current_indent, "String contains no closing quote");
         }
     }
 
@@ -807,15 +804,15 @@ static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
         // check separator
         if (chr == '\'' || chr == '_') {
             if (separator_seen) {
-                return parser_error(parser, p, "Duplicate separator in the number");
+                return amw_parser_error(parser, p, "Duplicate separator in the number");
             }
             if (!digit_seen) {
-                return parser_error(parser, p, "Separator is not allowed in the beginning of number");
+                return amw_parser_error(parser, p, "Separator is not allowed in the beginning of number");
             }
             separator_seen = true;
             p++;
             if (end_of_line(current_line, p)) {
-                return parser_error(parser, p, "Bad number");
+                return amw_parser_error(parser, p, "Bad number");
             }
             continue;
         }
@@ -830,7 +827,7 @@ static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
             } else if (chr >= '0' && chr <= '9') {
                 chr -= '0';
             } else if (!digit_seen) {
-                return parser_error(parser, p, "Bad number");
+                return amw_parser_error(parser, p, "Bad number");
             } else {
                 // not a digit, end of conversion
                 *pos = p;
@@ -839,7 +836,7 @@ static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
         } else if (chr >= '0' && chr < (char32_t) ('0' + radix)) {
             chr -= '0';
         } else if (!digit_seen) {
-            return parser_error(parser, p, "Bad number");
+            return amw_parser_error(parser, p, "Bad number");
         } else {
             // not a digit, end of conversion
             *pos = p;
@@ -850,7 +847,7 @@ static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
         result.unsigned_value *= radix;
         result.unsigned_value += chr;
         if (result.unsigned_value < prev_value) {
-            return parser_error(parser, *pos, "Numeric overflow");
+            return amw_parser_error(parser, *pos, "Numeric overflow");
         }
 
         p++;
@@ -917,7 +914,7 @@ UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsi
                 break;
         }
         if (end_of_line(current_line, pos)) {
-            return parser_error(parser, start_pos, "Bad number");
+            return amw_parser_error(parser, start_pos, "Bad number");
         }
     }
 
@@ -934,7 +931,7 @@ UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsi
     if (chr == '.') {
         if (radix != 10) {
 decimal_float_only:
-            return parser_error(parser, start_pos, "Only decimal representation is supported for floating point numbers");
+            return amw_parser_error(parser, start_pos, "Only decimal representation is supported for floating point numbers");
         }
         is_float = true;
         pos = skip_digits(current_line, pos + 1);
@@ -960,7 +957,7 @@ decimal_float_only:
         pos = skip_digits(current_line, pos);
 
     } else if (chr != AMW_COMMENT && chr != ':' && !uw_isspace(chr)) {
-        return parser_error(parser, start_pos, "Bad number");
+        return amw_parser_error(parser, start_pos, "Bad number");
     }
 
 done:
@@ -972,7 +969,7 @@ done:
         errno = 0;
         double n = strtod(number, nullptr);
         if (errno == ERANGE) {
-            return parser_error(parser, start_pos, "Floating point overflow");
+            return amw_parser_error(parser, start_pos, "Floating point overflow");
         }
         if (sign < 0 && n != 0.0) {
             n = -n;
@@ -982,7 +979,7 @@ done:
         // make integer
         if (base.unsigned_value > UW_SIGNED_MAX) {
             if (sign < 0) {
-                return parser_error(parser, start_pos, "Integer overflow");
+                return amw_parser_error(parser, start_pos, "Integer overflow");
             } else {
                 result = UwUnsigned(base.unsigned_value);
             }
@@ -1034,7 +1031,7 @@ static UwResult parse_list(AmwParser* parser)
             // check if hyphen is followed by space or end of line
             unsigned next_pos = item_indent + 1;
             if (!isspace_or_eol_at(&parser->current_line, next_pos)) {
-                return parser_error(parser, item_indent, "Bad list item");
+                return amw_parser_error(parser, item_indent, "Bad list item");
             }
 
             // parse item as a nested block
@@ -1062,7 +1059,7 @@ static UwResult parse_list(AmwParser* parser)
                 return uw_move(&status);
             }
             if (parser->current_indent != item_indent) {
-                return parser_error(parser, parser->current_indent, "Bad indentation of list item");
+                return amw_parser_error(parser, parser->current_indent, "Bad indentation of list item");
             }
         }
     }
@@ -1129,7 +1126,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
             }
 
             if (parser->current_indent != key_indent) {
-                return parser_error(parser, parser->current_indent, "Bad indentation of map key");
+                return amw_parser_error(parser, parser->current_indent, "Bad indentation of map key");
             }
 
             key = parse_value(parser, &value_pos);
@@ -1220,7 +1217,7 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
     end_pos = uw_string_skip_spaces(&parser->current_line, end_pos);
     if (end_of_line(&parser->current_line, end_pos)) {
         if (nested_value_pos) {
-            return parser_error(parser, end_pos, "Map key expected");
+            return amw_parser_error(parser, end_pos, "Map key expected");
         }
         // read next line
         UwValue status = _amw_read_block_line(parser);
@@ -1249,11 +1246,11 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
             UwValue first_key = uw_clone(value);
             return parse_map(parser, &first_key, end_pos + 2);
         }
-        return parser_error(parser, end_pos + 1, "Bad character encountered");
+        return amw_parser_error(parser, end_pos + 1, "Bad character encountered");
     }
 
     if (chr != AMW_COMMENT) {
-        return parser_error(parser, end_pos, "Bad character encountered");
+        return amw_parser_error(parser, end_pos, "Bad character encountered");
     }
 
     // read next line
@@ -1293,7 +1290,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         if (nested_value_pos) {
             // we expect map key, and map keys cannot start with colon
             // because they would look same as conversion specifier
-            return parser_error(parser, start_pos, "Map key expected and it cannot start with colon");
+            return amw_parser_error(parser, start_pos, "Map key expected and it cannot start with colon");
         }
         unsigned value_pos;
         UwValue convspec = parse_convspec(parser, start_pos, &value_pos);
@@ -1333,7 +1330,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         // if followed by space or end of line, that's a list item
         if (isspace_or_eol_at(&parser->current_line, next_pos)) {
             if (nested_value_pos) {
-                return parser_error(parser, start_pos, "Map key expected and it cannot be a list");
+                return amw_parser_error(parser, start_pos, "Map key expected and it cannot be a list");
             }
             // yes, it's a list item
             return parse_list(parser);
@@ -1360,7 +1357,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
             // multi-line string cannot be a key
             return uw_move(&str);
         } else {
-            return parser_error(parser, end_pos, "Bad character after quoted string");
+            return amw_parser_error(parser, end_pos, "Bad character after quoted string");
         }
     }
 
@@ -1433,7 +1430,7 @@ UwResult amw_parse(UwValuePtr markup)
         if (uw_error(&status)) {
             return uw_move(&status);
         }
-        return parser_error(parser, parser->current_indent, "Extra data after parsed value");
+        return amw_parser_error(parser, parser->current_indent, "Extra data after parsed value");
     }
     return uw_move(&result);
 }

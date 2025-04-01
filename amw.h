@@ -106,10 +106,19 @@ UwResult _amw_read_block(AmwParser* parser);
  * Read lines starting from current_line till the end of block.
  */
 
-UwResult _amw_parser_error(AmwParser* parser, unsigned line_number, unsigned pos, char* description, ...);
+UwResult _amw_parser_error(AmwParser* parser, char* source_file_name, unsigned source_line_number,
+                           unsigned line_number, unsigned char_pos, char* description, ...);
 /*
  * Set error in parser->status and return AMW_PARSE_ERROR.
  */
+
+#define amw_parser_error2(parser, line_number, char_pos, description, ...)  \
+    _amw_parser_error((parser), __FILE__, __LINE__, (line_number),  \
+                      (char_pos), (description) __VA_OPT__(,) __VA_ARGS__)
+
+#define amw_parser_error(parser, char_pos, description, ...)  \
+    amw_parser_error2((parser), (parser)->line_number,  \
+                      (char_pos), (description) __VA_OPT__(,) __VA_ARGS__)
 
 UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_number,
                             char32_t quote, unsigned start_pos, unsigned* end_pos);

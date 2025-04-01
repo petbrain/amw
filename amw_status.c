@@ -9,8 +9,7 @@ static UwResult amw_status_create(UwTypeId type_id, void* ctor_args)
 {
     // call super method
 
-    UwTypeId ancestor_id = _uw_types[UwTypeId_AmwStatus]->ancestor_id;
-    UwValue status = _uw_types[ancestor_id]->create(type_id, ctor_args);
+    UwValue status = uw_ancestor_of(UwTypeId_AmwStatus)->create(type_id, ctor_args);
     // the super method returns UW_SUCCESS by default
     if (uw_error(&status)) {
         return uw_move(&status);
@@ -34,8 +33,7 @@ static UwResult amw_status_init(UwValuePtr self, void* ctor_args)
 
     // call super method
 
-    UwTypeId ancestor_id = _uw_types[UwTypeId_AmwStatus]->ancestor_id;
-    UwValue status = _uw_types[ancestor_id]->init(self, ctor_args);
+    UwValue status = uw_ancestor_of(UwTypeId_AmwStatus)->init(self, ctor_args);
     if (uw_error(&status)) {
         return uw_move(&status);
     }
@@ -53,8 +51,7 @@ static void amw_status_hash(UwValuePtr self, UwHashContext* ctx)
 
     // call super method
 
-    UwTypeId ancestor_id = _uw_types[UwTypeId_AmwStatus]->ancestor_id;
-    _uw_types[ancestor_id]->hash(self, ctx);
+    uw_ancestor_of(UwTypeId_AmwStatus)->hash(self, ctx);
 }
 
 static void amw_status_dump(UwValuePtr self, FILE* fp, int first_indent, int next_indent, _UwCompoundChain* tail)
@@ -64,7 +61,7 @@ static void amw_status_dump(UwValuePtr self, FILE* fp, int first_indent, int nex
     _uw_dump_start(fp, self, first_indent);
     _uw_dump_struct_data(fp, self);
 
-    UwValue desc = uw_status_as_string(self);
+    UwValue desc = uw_ancestor_of(UwTypeId_AmwStatus)->to_string(self);
     UW_CSTRING_LOCAL(desc_cstr, &desc);
     fprintf(fp, " line %u, position %u: %s\n",
             data->line_number, data->position, desc_cstr);
@@ -77,7 +74,6 @@ static void init_amw_status()
 {
     UwTypeId_AmwStatus = uw_subtype(&amw_status_type, "AmwStatus", UwTypeId_Status, AmwStatusData);
     amw_status_type.create   = amw_status_create;
-    amw_status_type.init     = amw_status_init;
     amw_status_type.init     = amw_status_init;
     amw_status_type.hash     = amw_status_hash;
     amw_status_type.dump     = amw_status_dump;
