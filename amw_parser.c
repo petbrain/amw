@@ -264,7 +264,7 @@ UwResult _amw_read_block(AmwParser* parser)
 {
     TRACEPOINT();
 
-    UwValue lines = UwList();
+    UwValue lines = UwArray();
     uw_return_if_error(&lines);
 
     for (;;) {{
@@ -272,7 +272,7 @@ UwResult _amw_read_block(AmwParser* parser)
         UwValue line = uw_substr(&parser->current_line, parser->block_indent, UINT_MAX);
         uw_return_if_error(&line);
 
-        if (!uw_list_append(&lines, &line)) {
+        if (!uw_array_append(&lines, &line)) {
             return UwOOM();
         }
         // read next line
@@ -390,15 +390,15 @@ static UwResult parse_raw_value(AmwParser* parser)
     UwValue lines = _amw_read_block(parser);
     uw_return_if_error(&lines);
 
-    if (uw_list_length(&lines) > 1) {
+    if (uw_array_length(&lines) > 1) {
         // append one empty line for ending line break
         UWDECL_String(empty_line);
-        if (!uw_list_append(&lines, &empty_line)) {
+        if (!uw_array_append(&lines, &empty_line)) {
             return UwOOM();
         }
     }
     // return concatenated lines
-    return uw_list_join('\n', &lines);
+    return uw_array_join('\n', &lines);
 }
 
 static UwResult parse_literal_string(AmwParser* parser)
@@ -413,29 +413,29 @@ static UwResult parse_literal_string(AmwParser* parser)
 
     // normalize list of lines
 
-    if (!uw_list_dedent(&lines)) {
+    if (!uw_array_dedent(&lines)) {
         return UwOOM();
     }
     // drop empty trailing lines
-    unsigned len = uw_list_length(&lines);
+    unsigned len = uw_array_length(&lines);
     while (len--) {{
-        UwValue line = uw_list_item(&lines, len);
+        UwValue line = uw_array_item(&lines, len);
         if (uw_strlen(&line) != 0) {
             break;
         }
-        uw_list_del(&lines, len, len + 1);
+        uw_array_del(&lines, len, len + 1);
     }}
 
     // append one empty line for ending line break
-    if (uw_list_length(&lines) > 1) {
+    if (uw_array_length(&lines) > 1) {
         UWDECL_String(empty_line);
-        if (!uw_list_append(&lines, &empty_line)) {
+        if (!uw_array_append(&lines, &empty_line)) {
             return UwOOM();
         }
     }
 
     // return concatenated lines
-    return uw_list_join('\n', &lines);
+    return uw_array_join('\n', &lines);
 }
 
 static UwResult parse_folded_string(AmwParser* parser)
@@ -447,15 +447,15 @@ static UwResult parse_folded_string(AmwParser* parser)
 
     // normalize list of lines
 
-    if (!uw_list_dedent(&lines)) {
+    if (!uw_array_dedent(&lines)) {
         return UwOOM();
     }
     // drop empty lines
-    unsigned len = uw_list_length(&lines);
+    unsigned len = uw_array_length(&lines);
     for (unsigned i = len; i--;) {{
-        UwValue line = uw_list_item(&lines, i);
+        UwValue line = uw_array_item(&lines, i);
         if (uw_strlen(&line) == 0) {
-            uw_list_del(&lines, i, i + 1);
+            uw_array_del(&lines, i, i + 1);
             len--;
         }
     }}
@@ -465,7 +465,7 @@ static UwResult parse_folded_string(AmwParser* parser)
     }
 
     // return concatenated lines
-    return uw_list_join(' ', &lines);
+    return uw_array_join(' ', &lines);
 }
 
 UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_number,
@@ -649,10 +649,10 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     parser->block_indent = opening_quote_pos + 1;
 
     // read block
-    UwValue lines = UwList();
+    UwValue lines = UwArray();
     uw_return_if_error(&lines);
 
-    UwValue line_numbers = UwList();
+    UwValue line_numbers = UwArray();
     uw_return_if_error(&line_numbers);
 
     bool closing_quote_detected = false;
@@ -663,19 +663,19 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
         // append line number
         UwValue n = UwUnsigned(parser->line_number);
-        if (!uw_list_append(&line_numbers, &n)) {
+        if (!uw_array_append(&line_numbers, &n)) {
             return UwOOM();
         }
         if (find_closing_quote(&parser->current_line, quote, opening_quote_pos + 1, end_pos)) {
             // final line
             UwValue final_line = uw_substr(&line, 0, *end_pos - 1);
-            if (!uw_list_append(&lines, &final_line)) {
+            if (!uw_array_append(&lines, &final_line)) {
                 return UwOOM();
             }
             closing_quote_detected = true;
             break;
         }
-        if (!uw_list_append(&lines, &line)) {
+        if (!uw_array_append(&lines, &line)) {
             return UwOOM();
         }
         // read next line
@@ -703,17 +703,17 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
     // fold lines
 
-    if (!uw_list_dedent(&lines)) {
+    if (!uw_array_dedent(&lines)) {
         return UwOOM();
     }
 
     // drop empty lines
-    unsigned len = uw_list_length(&lines);
+    unsigned len = uw_array_length(&lines);
     for (unsigned i = len; i--;) {{
-        UwValue line = uw_list_item(&lines, i);
+        UwValue line = uw_array_item(&lines, i);
         if (uw_strlen(&line) == 0) {
-            uw_list_del(&lines, i, i + 1);
-            uw_list_del(&line_numbers, i, i + 1);
+            uw_array_del(&lines, i, i + 1);
+            uw_array_del(&line_numbers, i, i + 1);
             len--;
         }
     }}
@@ -724,21 +724,21 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
     // unescape lines
     for (unsigned i = 0; i < len; i++) {{
-        UwValue line = uw_list_item(&lines, i);
+        UwValue line = uw_array_item(&lines, i);
         uw_return_if_error(&line);
 
-        UwValue line_number = uw_list_item(&lines, i);
+        UwValue line_number = uw_array_item(&lines, i);
         uw_return_if_error(&line_number);
 
         UwValue unescaped = _amw_unescape_line(parser, &line, line_number.unsigned_value, quote, 0, nullptr);
         uw_return_if_error(&unescaped);
 
-        UwValue status = uw_list_set_item(&lines, i, &unescaped);
+        UwValue status = uw_array_set_item(&lines, i, &unescaped);
         uw_return_if_error(&status);
     }}
 
     // return concatenated lines
-    return uw_list_join(' ', &lines);
+    return uw_array_join(' ', &lines);
 }
 
 static UwResult parse_isodate(AmwParser* parser)
@@ -988,7 +988,7 @@ static UwResult parse_list(AmwParser* parser)
 {
     TRACE_ENTER();
 
-    UwValue result = UwList();
+    UwValue result = UwArray();
     uw_return_if_error(&result);
 
     /*
@@ -1017,7 +1017,7 @@ static UwResult parse_list(AmwParser* parser)
             }
             uw_return_if_error(&item);
 
-            if (!uw_list_append(&result, &item)) {
+            if (!uw_array_append(&result, &item)) {
                 return UwOOM();
             }
 
