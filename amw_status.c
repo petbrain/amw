@@ -11,9 +11,7 @@ static UwResult amw_status_create(UwTypeId type_id, void* ctor_args)
 
     UwValue status = uw_ancestor_of(UwTypeId_AmwStatus)->create(type_id, ctor_args);
     // the super method returns UW_SUCCESS by default
-    if (uw_error(&status)) {
-        return uw_move(&status);
-    }
+    uw_return_if_error(&status);
 
     // the base Status constructor may not allocate struct_data
     // do this by setting status description
@@ -34,10 +32,7 @@ static UwResult amw_status_init(UwValuePtr self, void* ctor_args)
     // call super method
 
     UwValue status = uw_ancestor_of(UwTypeId_AmwStatus)->init(self, ctor_args);
-    if (uw_error(&status)) {
-        return uw_move(&status);
-    }
-
+    uw_return_if_error(&status);
     return UwOK();
 }
 

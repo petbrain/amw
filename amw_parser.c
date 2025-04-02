@@ -140,9 +140,8 @@ UwResult _amw_parser_error(AmwParser* parser, char* source_file_name, unsigned s
 {
     UwValue status = uw_create(UwTypeId_AmwStatus);
     // status is UW_SUCCESS by default
-    if (uw_error(&status)) {
-        return uw_move(&status);
-    }
+    uw_return_if_error(&status);
+
     status.status_code = AMW_PARSE_ERROR;
     _uw_set_status_location(&status, source_file_name, source_line_number);
     AmwStatusData* status_data = _amw_status_data_ptr(&status);
@@ -184,9 +183,7 @@ static UwResult read_line(AmwParser* parser)
  */
 {
     UwValue status = uw_read_line_inplace(&parser->markup, &parser->current_line);
-    if (uw_error(&status)) {
-        return uw_move(&status);
-    }
+    uw_return_if_error(&status);
 
     // strip trailing spaces
     if (!uw_string_rtrim(&parser->current_line)) {
@@ -228,9 +225,8 @@ UwResult _amw_read_block_line(AmwParser* parser)
             uw_destroy(&parser->current_line);
             return UwError(AMW_END_OF_BLOCK);
         }
-        if (uw_error(&status)) {
-            return uw_move(&status);
-        }
+        uw_return_if_error(&status);
+
         if (parser->skip_comments) {
             // skip empty lines too
             if (uw_strlen(&parser->current_line) == 0) {
@@ -269,15 +265,13 @@ UwResult _amw_read_block(AmwParser* parser)
     TRACEPOINT();
 
     UwValue lines = UwList();
-    if (uw_error(&lines)) {
-        return uw_move(&lines);
-    }
+    uw_return_if_error(&lines);
+
     for (;;) {{
         // append line
         UwValue line = uw_substr(&parser->current_line, parser->block_indent, UINT_MAX);
-        if (uw_error(&line)) {
-            return uw_move(&line);
-        }
+        uw_return_if_error(&line);
+
         if (!uw_list_append(&lines, &line)) {
             return UwOOM();
         }
@@ -286,9 +280,7 @@ UwResult _amw_read_block(AmwParser* parser)
         if (_amw_end_of_block(&status)) {
             return uw_move(&lines);
         }
-        if (uw_error(&status)) {
-            return uw_move(&status);
-        }
+        uw_return_if_error(&status);
     }}
 }
 
@@ -335,9 +327,7 @@ static UwResult parse_nested_block_from_next_line(AmwParser* parser, AmwBlockPar
     if (_amw_end_of_block(&status)) {
         return amw_parser_error(parser, parser->current_indent, "Empty block");
     }
-    if (uw_error(&status)) {
-        return uw_move(&status);
-    }
+    uw_return_if_error(&status);
 
     // call parse_nested_block
     return parse_nested_block(parser, parser->block_indent + 1, parser_func);
@@ -381,9 +371,8 @@ static UwResult parse_convspec(AmwParser* parser, unsigned opening_colon_pos, un
         return UwNull();
     }
     UwValue convspec = uw_substr(&parser->current_line, start_pos, *end_pos);
-    if (uw_error(&convspec)) {
-        return uw_move(&convspec);
-    }
+    uw_return_if_error(&convspec);
+
     if (!uw_string_trim(&convspec)) {
         return UwOOM();
     }
@@ -399,9 +388,8 @@ static UwResult parse_raw_value(AmwParser* parser)
     TRACEPOINT();
 
     UwValue lines = _amw_read_block(parser);
-    if (uw_error(&lines)) {
-        return uw_move(&lines);
-    }
+    uw_return_if_error(&lines);
+
     if (uw_list_length(&lines) > 1) {
         // append one empty line for ending line break
         UWDECL_String(empty_line);
@@ -421,9 +409,7 @@ static UwResult parse_literal_string(AmwParser* parser)
     TRACEPOINT();
 
     UwValue lines = _amw_read_block(parser);
-    if (uw_error(&lines)) {
-        return uw_move(&lines);
-    }
+    uw_return_if_error(&lines);
 
     // normalize list of lines
 
@@ -457,9 +443,7 @@ static UwResult parse_folded_string(AmwParser* parser)
     TRACEPOINT();
 
     UwValue lines = _amw_read_block(parser);
-    if (uw_error(&lines)) {
-        return uw_move(&lines);
-    }
+    uw_return_if_error(&lines);
 
     // normalize list of lines
 
@@ -666,20 +650,17 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
     // read block
     UwValue lines = UwList();
-    if (uw_error(&lines)) {
-        return uw_move(&lines);
-    }
+    uw_return_if_error(&lines);
+
     UwValue line_numbers = UwList();
-    if (uw_error(&line_numbers)) {
-        return uw_move(&line_numbers);
-    }
+    uw_return_if_error(&line_numbers);
+
     bool closing_quote_detected = false;
     for (;;) {{
         // append line
         UwValue line = uw_substr(&parser->current_line, parser->block_indent, UINT_MAX);
-        if (uw_error(&line)) {
-            return uw_move(&line);
-        }
+        uw_return_if_error(&line);
+
         // append line number
         UwValue n = UwUnsigned(parser->line_number);
         if (!uw_list_append(&line_numbers, &n)) {
@@ -702,9 +683,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
         if (_amw_end_of_block(&status)) {
             break;
         }
-        if (uw_error(&status)) {
-            return uw_move(&status);
-        }
+        uw_return_if_error(&status);
     }}
 
     // end nested block
@@ -746,21 +725,16 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     // unescape lines
     for (unsigned i = 0; i < len; i++) {{
         UwValue line = uw_list_item(&lines, i);
-        if (uw_error(&line)) {
-            return uw_move(&line);
-        }
+        uw_return_if_error(&line);
+
         UwValue line_number = uw_list_item(&lines, i);
-        if (uw_error(&line_number)) {
-            return uw_move(&line_number);
-        }
+        uw_return_if_error(&line_number);
+
         UwValue unescaped = _amw_unescape_line(parser, &line, line_number.unsigned_value, quote, 0, nullptr);
-        if (uw_error(&unescaped)) {
-            return uw_move(&unescaped);
-        }
+        uw_return_if_error(&unescaped);
+
         UwValue status = uw_list_set_item(&lines, i, &unescaped);
-        if (uw_error(&status)) {
-            return uw_move(&status);
-        }
+        uw_return_if_error(&status);
     }}
 
     // return concatenated lines
@@ -919,9 +893,8 @@ UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsi
     }
 
     base = parse_unsigned(parser, &pos, radix);
-    if (uw_error(&base)) {
-        return uw_move(&base);
-    }
+    uw_return_if_error(&base);
+
     if (end_of_line(current_line, pos)) {
         goto done;
     }
@@ -1016,9 +989,7 @@ static UwResult parse_list(AmwParser* parser)
     TRACE_ENTER();
 
     UwValue result = UwList();
-    if (uw_error(&result)) {
-        return uw_move(&result);
-    }
+    uw_return_if_error(&result);
 
     /*
      * All list items must have the same indent.
@@ -1044,9 +1015,8 @@ static UwResult parse_list(AmwParser* parser)
                 next_pos++;
                 item = parse_nested_block(parser, next_pos, value_parser_func);
             }
-            if (uw_error(&item)) {
-                return uw_move(&item);;
-            }
+            uw_return_if_error(&item);
+
             if (!uw_list_append(&result, &item)) {
                 return UwOOM();
             }
@@ -1055,9 +1025,8 @@ static UwResult parse_list(AmwParser* parser)
             if (_amw_end_of_block(&status)) {
                 break;
             }
-            if (uw_error(&status)) {
-                return uw_move(&status);
-            }
+            uw_return_if_error(&status);
+
             if (parser->current_indent != item_indent) {
                 return amw_parser_error(parser, parser->current_indent, "Bad indentation of list item");
             }
@@ -1080,14 +1049,10 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
     TRACE_ENTER();
 
     UwValue result = UwMap();
-    if (uw_error(&result)) {
-        return uw_move(&result);
-    }
+    uw_return_if_error(&result);
 
     UwValue key = uw_deepcopy(first_key);
-    if (uw_error(&key)) {
-        return uw_move(&key);
-    }
+    uw_return_if_error(&key);
 
     /*
      * All keys in the map must have the same indent.
@@ -1106,9 +1071,8 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
             } else {
                 value = parse_nested_block(parser, value_pos, value_parser_func);
             }
-            if (uw_error(&value)) {
-                return uw_move(&value);
-            }
+            uw_return_if_error(&value);
+
             if (!uw_map_update(&result, &key, &value)) {
                 return UwOOM();
             }
@@ -1121,18 +1085,14 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
             if (_amw_end_of_block(&status)) {
                 break;
             }
-            if (uw_error(&status)) {
-                return uw_move(&status);
-            }
+            uw_return_if_error(&status);
 
             if (parser->current_indent != key_indent) {
                 return amw_parser_error(parser, parser->current_indent, "Bad indentation of map key");
             }
 
             key = parse_value(parser, &value_pos);
-            if (uw_error(&key)) {
-                return uw_move(&key);
-            }
+            uw_return_if_error(&key);
         }
     }
     TRACE_EXIT();
@@ -1156,9 +1116,8 @@ static UwResult is_kv_separator(AmwParser* parser, unsigned colon_pos)
     }
     unsigned value_pos;
     UwValue convspec = parse_convspec(parser, colon_pos, &value_pos);
-    if (uw_error(&convspec)) {
-        return uw_move(&convspec);
-    }
+    uw_return_if_error(&convspec);
+
     return UwBool(uw_is_string(&convspec));
 }
 
@@ -1176,9 +1135,8 @@ static UwResult parse_literal_string_or_map(AmwParser* parser)
     unsigned colon_pos;
     if (uw_strchr(&parser->current_line, ':', start_pos, &colon_pos)) {
         UwValue kvs = is_kv_separator(parser, colon_pos);
-        if (uw_error(&kvs)) {
-            return uw_move(&kvs);
-        }
+        uw_return_if_error(&kvs);
+
         if (kvs.bool_value) {
             // found, parse map
             UwValue first_key = uw_substr(&parser->current_line, start_pos, colon_pos);
@@ -1222,9 +1180,7 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
         // read next line
         UwValue status = _amw_read_block_line(parser);
         if (!_amw_end_of_block(&status)) {
-            if (uw_error(&status)) {
-                return uw_move(&status);
-            }
+            uw_return_if_error(&status);
         }
         return uw_clone(value);
     }
@@ -1232,9 +1188,8 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
     char32_t chr = uw_char_at(&parser->current_line, end_pos);
     if (chr == ':') {
         UwValue kvs = is_kv_separator(parser, end_pos);
-        if (uw_error(&kvs)) {
-            return uw_move(&kvs);
-        }
+        uw_return_if_error(&kvs);
+
         if (kvs.bool_value) {
             // found key-value separator
             if (nested_value_pos) {
@@ -1256,9 +1211,7 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
     // read next line
     UwValue status = _amw_read_block_line(parser);
     if (!_amw_end_of_block(&status)) {
-        if (uw_error(&status)) {
-            return uw_move(&status);
-        }
+        uw_return_if_error(&status);
     }
     return uw_clone(value);
 }
@@ -1294,9 +1247,8 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         }
         unsigned value_pos;
         UwValue convspec = parse_convspec(parser, start_pos, &value_pos);
-        if (uw_error(&convspec)) {
-            return uw_move(&convspec);
-        }
+        uw_return_if_error(&convspec);
+
         if (!uw_is_string(&convspec)) {
             // not a conversion specifier
             return parse_literal_string(parser);
@@ -1346,9 +1298,8 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         unsigned start_line = parser->line_number;
         unsigned end_pos;
         UwValue str = parse_quoted_string(parser, start_pos, &end_pos);
-        if (uw_error(&str)) {
-            return uw_move(&str);
-        }
+        uw_return_if_error(&str);
+
         unsigned end_line = parser->line_number;
         if (end_line == start_line) {
             // single-line string can be a map key
@@ -1414,22 +1365,18 @@ UwResult amw_parse(UwValuePtr markup)
     if (_amw_end_of_block(&status) && parser->eof) {
         return UwStatus(UW_ERROR_EOF);
     }
-    if (uw_error(&status)) {
-        return uw_move(&status);
-    }
+    uw_return_if_error(&status);
+
     // parse top-level value
     UwValue result = value_parser_func(parser);
-    if (uw_error(&result)) {
-        return uw_move(&result);
-    }
+    uw_return_if_error(&result);
+
     // make sure markup has no more data
     status = _amw_read_block_line(parser);
     if (parser->eof) {
         // all right, no op
     } else {
-        if (uw_error(&status)) {
-            return uw_move(&status);
-        }
+        uw_return_if_error(&status);
         return amw_parser_error(parser, parser->current_indent, "Extra data after parsed value");
     }
     return uw_move(&result);

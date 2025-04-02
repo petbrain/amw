@@ -13,14 +13,12 @@ UwResult amw_parse_json(UwValuePtr markup)
     }
     // read first line to prepare for parsing and to detect EOF
     UwValue status = _amw_read_block_line(parser);
-    if (uw_error(&status)) {
-        return uw_move(&status);
-    }
+    uw_return_if_error(&status);
+
     // parse top-level value
     UwValue result = _amw_json_parser_func(parser);
-    if (uw_error(&result)) {
-        return uw_move(&result);
-    }
+    uw_return_if_error(&result);
+
     // make sure markup has no more data
     status = _amw_read_block_line(parser);
     if (parser->eof) {
