@@ -958,12 +958,12 @@ static UwResult parse_timestamp(AmwParser* parser)
         if (!uw_isdigit(chr)) {
             break;
         }
-        uint64_t seconds = result.ts_seconds * 10 + chr - '0';
-        if (seconds < result.ts_seconds) {
+        uint64_t next_order = result.ts_seconds * 10;
+        if (next_order / 10 != result.ts_seconds) {
             // overflow
             return amw_parser_error(parser, pos, bad_timestamp);
         }
-        result.ts_seconds = seconds;
+        result.ts_seconds = next_order + chr - '0';
         pos++;
     }
     if ( chr == '.') {
@@ -1041,12 +1041,12 @@ static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
             return result;
         }
 
-        UwType_Unsigned prev_value = result.unsigned_value;
-        result.unsigned_value *= radix;
-        result.unsigned_value += chr;
-        if (result.unsigned_value < prev_value) {
+        UwType_Unsigned next_order = result.unsigned_value * radix;
+        if (next_order / radix != result.unsigned_value) {
+            // overflow
             return amw_parser_error(parser, *pos, "Numeric overflow");
         }
+        result.unsigned_value = next_order + chr;
 
         p++;
         if (end_of_line(current_line, p)) {
