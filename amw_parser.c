@@ -59,7 +59,7 @@ static UwResult value_parser_func(AmwParser* parser);
 static UwResult parse_raw_value(AmwParser* parser);
 static UwResult parse_literal_string(AmwParser* parser);
 static UwResult parse_folded_string(AmwParser* parser);
-static UwResult parse_isodate(AmwParser* parser);
+static UwResult parse_datetime(AmwParser* parser);
 static UwResult parse_timestamp(AmwParser* parser);
 
 
@@ -86,7 +86,7 @@ AmwParser* amw_create_parser(UwValuePtr markup)
         UwCharPtr("raw"),       UwPtr((void*) parse_raw_value),
         UwCharPtr("literal"),   UwPtr((void*) parse_literal_string),
         UwCharPtr("folded"),    UwPtr((void*) parse_folded_string),
-        UwCharPtr("isodate"),   UwPtr((void*) parse_isodate),
+        UwCharPtr("datetime"),  UwPtr((void*) parse_datetime),
         UwCharPtr("timestamp"), UwPtr((void*) parse_timestamp),
         UwCharPtr("json"),      UwPtr((void*) _amw_json_parser_func)
     );
@@ -140,13 +140,17 @@ UwResult _amw_parser_error(AmwParser* parser, char* source_file_name, unsigned s
 {
     UwValue status = uw_create(UwTypeId_AmwStatus);
     // status is UW_SUCCESS by default
-    uw_return_if_error(&status);
+    // can't use uw_if_error here because of simplified checking in uw_ok
+    if (status.status_code != UW_SUCCESS) {
+        return uw_move(&status);
+    }
 
     status.status_code = AMW_PARSE_ERROR;
     _uw_set_status_location(&status, source_file_name, source_line_number);
     AmwStatusData* status_data = _amw_status_data_ptr(&status);
     status_data->line_number = line_number;;
     status_data->position = char_pos;
+
     va_list ap;
     va_start(ap);
     _uw_set_status_desc_ap(&status, description, ap);
@@ -346,11 +350,21 @@ static unsigned get_start_position(AmwParser* parser)
     }
 }
 
+static bool comment_or_end_of_line(AmwParser* parser, unsigned position)
+/*
+ * Check if current line ends at position or contains comment.
+ */
+{
+    position = uw_string_skip_spaces(&parser->current_line, position);
+    return (end_of_line(&parser->current_line, position)
+            || uw_char_at(&parser->current_line, position) == AMW_COMMENT);
+}
+
 static UwResult parse_convspec(AmwParser* parser, unsigned opening_colon_pos, unsigned* end_pos)
 /*
  * Extract conversion specifier starting from `opening_colon_pos` in the `current_line`.
  *
- * On success return string and write position of the value closing colon to `closing_colon_pos`.
+ * On success return string and write `end_pos`.
  *
  * If conversion specified is not detected, return UwNull()
  *
@@ -379,6 +393,10 @@ static UwResult parse_convspec(AmwParser* parser, unsigned opening_colon_pos, un
     if (!have_custom_parser(parser, &convspec)) {
         // such a conversion specifier is not defined
         return UwNull();
+    }
+    (*end_pos)++;
+    if (uw_isspace(uw_char_at(&parser->current_line, *end_pos))) {
+        (*end_pos)++;
     }
     return uw_move(&convspec);
 }
@@ -741,22 +759,228 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     return uw_array_join(' ', &lines);
 }
 
-static UwResult parse_isodate(AmwParser* parser)
+static bool parse_nanosecond_frac(AmwParser* parser, unsigned* pos, uint32_t* result)
 /*
- * Parse value as ISO-8601 date starting from block indent in the current line.
+ * Parse fractional nanoseconds part in the current line starting from `pos`.
+ * Always update `pos` upon return.
+ * Return true on success and write parsed value to `result`.
+ * On error return false.
+ */
+{
+    unsigned p = *pos;
+    uint32_t nanoseconds = 0;
+    unsigned i = 0;
+    while (!end_of_line(&parser->current_line, p)) {
+        char32_t chr = uw_char_at(&parser->current_line, p);
+        if (!uw_isdigit(chr)) {
+            break;
+        }
+        if (i == 9) {
+            *pos = p;
+            return false;
+        }
+        nanoseconds *= 10;
+        nanoseconds += chr - '0';
+        i++;
+        p++;
+    }
+    if (i == 0) {
+    }
+    static unsigned order[] = {
+        1000'000'000,  // unused, i starts from 1 here
+        100'000'000,
+        10'000'000,
+        1000'000,
+        100'000,
+        10'000,
+        1000,
+        100,
+        10,
+        1
+    };
+    *result = nanoseconds * order[i];
+    *pos = p;
+    return true;
+}
+
+static UwResult parse_datetime(AmwParser* parser)
+/*
+ * Parse value date/time starting from block indent in the current line.
  * Return UwDateTime on success, UwStatus on error.
  */
 {
-    return UwStatus(UW_ERROR_NOT_IMPLEMENTED);
+    static char bad_datetime[] = "Bad date/time";
+    UWDECL_DateTime(result);
+    UwValuePtr current_line = &parser->current_line;
+    unsigned pos = get_start_position(parser);
+    char32_t chr;
+
+    // parse YYYY part
+    for (unsigned i = 0; i < 4; i++, pos++) {
+        chr = uw_char_at(current_line, pos);
+        if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+        result.year *= 10;
+        result.year += chr - '0';
+    }
+    // skip optional separator
+    if (uw_char_at(current_line, pos) == '-') {
+        pos++;
+    }
+    // parse MM part
+    for (unsigned i = 0; i < 2; i++, pos++) {
+        chr = uw_char_at(current_line, pos);
+        if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+        result.month *= 10;
+        result.month += chr - '0';
+    }
+    // skip optional separator
+    if (uw_char_at(current_line, pos) == '-') {
+        pos++;
+    }
+    // parse DD part
+    for (unsigned i = 0; i < 2; i++, pos++) {
+        chr = uw_char_at(current_line, pos);
+        if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+        result.day *= 10;
+        result.day += chr - '0';
+    }
+    // skip optional separator
+    chr = uw_char_at(current_line, pos);
+    if (chr == 'T') {
+        pos++;
+    } else {
+        pos = uw_string_skip_spaces(current_line, pos);
+        if (end_of_line(current_line, pos)) { goto end_of_datetime; }
+        chr = uw_char_at(current_line, pos);
+        if (chr == AMW_COMMENT) { goto end_of_datetime; }
+    }
+    // parse HH part
+    for (unsigned i = 0; i < 2; i++, pos++) {
+        chr = uw_char_at(current_line, pos);
+        if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+        result.hour *= 10;
+        result.hour += chr - '0';
+    }
+    // skip optional separator
+    if (uw_char_at(current_line, pos) == ':') {
+        pos++;
+    }
+    // parse MM part
+    for (unsigned i = 0; i < 2; i++, pos++) {
+        chr = uw_char_at(current_line, pos);
+        if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+        result.minute *= 10;
+        result.minute += chr - '0';
+    }
+    // skip optional separator
+    if (uw_char_at(current_line, pos) == ':') {
+        pos++;
+    }
+    // parse SS part
+    for (unsigned i = 0; i < 2; i++, pos++) {
+        chr = uw_char_at(current_line, pos);
+        if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+        result.second *= 10;
+        result.second += chr - '0';
+    }
+    // check optional parts
+    chr = uw_char_at(current_line, pos);
+    if (chr == 'Z') {
+        pos++;
+        goto end_of_datetime;
+    }
+    if ( chr == '.') {
+        // parse nanoseconds
+        pos++;
+        if (!parse_nanosecond_frac(parser, &pos, &result.nanosecond)) {
+            return amw_parser_error(parser, pos, bad_datetime);
+        }
+        chr = uw_char_at(current_line, pos);
+    }
+    if (chr == 'Z') {
+        pos++;
+
+    } else if (chr == '+' || chr == '-') {
+        // parse GMT offset
+        int sign = (chr == '-')? -1 : 1;
+        pos++;
+        // parse HH part
+        unsigned offset_hour = 0;
+        for (unsigned i = 0; i < 2; i++, pos++) {
+            chr = uw_char_at(current_line, pos);
+            if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+            offset_hour *= 10;
+            offset_hour += chr - '0';
+        }
+        // skip optional separator
+        if (uw_char_at(current_line, pos) == ':') {
+            pos++;
+        }
+        // parse optional MM part
+        unsigned offset_minute = 0;
+        if (!end_of_line(current_line, pos)) {
+            chr = uw_char_at(current_line, pos);
+            if (uw_isdigit(chr)) {
+                for (unsigned i = 0; i < 2; i++, pos++) {
+                    chr = uw_char_at(current_line, pos);
+                    if (!uw_isdigit(chr)) { return amw_parser_error(parser, pos, bad_datetime); }
+                    offset_minute *= 10;
+                    offset_minute += chr - '0';
+                }
+            }
+        }
+        result.gmt_offset = sign * offset_hour * 60 + offset_minute;
+    }
+
+end_of_datetime:
+    pos = uw_string_skip_spaces(current_line, pos);
+    if (!end_of_line(current_line, pos)) {
+        chr = uw_char_at(current_line, pos);
+        if (chr != AMW_COMMENT) { return amw_parser_error(parser, pos, bad_datetime); }
+    }
+    return uw_move(&result);
 }
 
 static UwResult parse_timestamp(AmwParser* parser)
 /*
- * Parse value as ISO-8601 date starting from block indent in the current line.
+ * Parse value as timestamp starting from block indent in the current line.
  * Return UwTimestamp on success, UwStatus on error.
  */
 {
-    return UwStatus(UW_ERROR_NOT_IMPLEMENTED);
+    static char bad_timestamp[] = "Bad timestamp";
+    UWDECL_Timestamp(result);
+    UwValuePtr current_line = &parser->current_line;
+    unsigned pos = get_start_position(parser);
+    char32_t chr;
+
+    for (;;) {
+        chr = uw_char_at(current_line, pos);
+        if (!uw_isdigit(chr)) {
+            break;
+        }
+        uint64_t seconds = result.ts_seconds * 10 + chr - '0';
+        if (seconds < result.ts_seconds) {
+            // overflow
+            return amw_parser_error(parser, pos, bad_timestamp);
+        }
+        result.ts_seconds = seconds;
+        pos++;
+    }
+    if ( chr == '.') {
+        // parse nanoseconds
+        pos++;
+        if (!parse_nanosecond_frac(parser, &pos, &result.ts_nanoseconds)) {
+            return amw_parser_error(parser, pos, bad_timestamp);
+        }
+    }
+    pos = uw_string_skip_spaces(current_line, pos);
+    if (!end_of_line(current_line, pos)) {
+        chr = uw_char_at(current_line, pos);
+        if (chr != AMW_COMMENT) {
+            return amw_parser_error(parser, pos, bad_timestamp);
+        }
+    }
+    return uw_move(&result);
 }
 
 static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
@@ -966,16 +1190,6 @@ done:
     }
     *end_pos= pos;
     return uw_move(&result);
-}
-
-static bool comment_or_end_of_line(AmwParser* parser, unsigned position)
-/*
- * Check if current line ends at position or contains comment.
- */
-{
-    position = uw_string_skip_spaces(&parser->current_line, position);
-    return (end_of_line(&parser->current_line, position)
-            || uw_char_at(&parser->current_line, position) == AMW_COMMENT);
 }
 
 static UwResult parse_list(AmwParser* parser)

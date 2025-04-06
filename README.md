@@ -41,8 +41,8 @@ Avoid using tabs.
 * signed integer
 * unsigned integer
 * float
-* date/time (WIP)
-* timestamp (WIP)
+* date/time
+* timestamp
 * string
 * list
 * map
@@ -60,8 +60,8 @@ The following conversions are supported:
 * `:raw:` return literal string as is, without dedent
 * `:literal:` parse value as literal string
 * `:folded:` parse value as string and fold it, same as in YAML
-* `:isodate:` parse value as ISO-8601 date (WIP)
-* `:timestamp:` parse value as timestamp (WIP)
+* `:datetime:` parse value as datetime
+* `:timestamp:` parse value as timestamp in the form seconds\[.frac\], up to nanosecond resolution
 * `:json:` parse value as JSON (WIP)
 
 Custom conversion routines can be set with `amw_set_custom_parser` function.
@@ -72,17 +72,22 @@ Simple types are always single-line, except strings:
 ```yaml
 100  # numeric value
 
-:isodate: 20120101  # end of world the God forgot about
+:datetime: 2012-01-01  # end of world the God forgot about
 
-# bad markup:
-:isodate:
-  20120101
+:datetime:
+  2012-01-01
+
+answer:
+  # numeric value:
+  42
 ```
-However, blocks that contain simple types may include leading comments:
-```
-# numeric value:
-42
-```
+
+### DateTime
+
+AMW supports formats mutual of ISO-8601 and RFC 3339
+(see https://ijmacd.github.io/rfc3339-iso8601/).
+
+In addition, T or space separator between date and time and dashes in the date part are optional.
 
 ### Numbers
 
