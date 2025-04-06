@@ -28,11 +28,6 @@ static UwResult amw_status_init(UwValuePtr self, void* ctor_args)
     AmwStatusData* data = _amw_status_data_ptr(self);
     data->line_number = 0;
     data->position = 0;
-
-    // call super method
-
-    UwValue status = uw_ancestor_of(UwTypeId_AmwStatus)->init(self, ctor_args);
-    uw_return_if_error(&status);
     return UwOK();
 }
 
