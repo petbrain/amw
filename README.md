@@ -54,7 +54,7 @@ All other types are considered simple.
 
 The first line of the block may contain conversion specifier. Otherwise, type deduction rules apply.
 
-Conversion specifier is a string enclosed by colons and followed by space.
+Conversion specifier is a string enclosed by colons and followed by space or end of line.
 The following conversions are supported:
 
 * `:raw:` return literal string as is, without dedent
@@ -321,9 +321,14 @@ There are some rules where comments can appear.
 
 Everything that follows conversion specifier is treated as a raw value.
 Therefore, comments are not allowed immediately after conversion specifier.
-But they can follow simple values:
+But they can follow simple values or be a part of the block if conversion specifier
+is followed by line break:
 ```
 :float: 100  # numeric value
+
+:float:
+  # numeric value
+  100
 ```
 
 However, if a value is an explicitly denoted literal text or raw value, the comment will be
