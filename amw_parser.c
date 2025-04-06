@@ -958,12 +958,16 @@ static UwResult parse_timestamp(AmwParser* parser)
         if (!uw_isdigit(chr)) {
             break;
         }
-        uint64_t next_order = result.ts_seconds * 10;
-        if (next_order / 10 != result.ts_seconds) {
+        if (result.ts_seconds > UW_UNSIGNED_MAX / 10) {
             // overflow
             return amw_parser_error(parser, pos, bad_timestamp);
         }
-        result.ts_seconds = next_order + chr - '0';
+        uint64_t seconds = result.ts_seconds * 10 + chr - '0';
+        if (seconds < result.ts_seconds) {
+            // overflow
+            return amw_parser_error(parser, pos, bad_timestamp);
+        }
+        result.ts_seconds = seconds;
         pos++;
     }
     if ( chr == '.') {
@@ -1040,13 +1044,16 @@ static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
             *pos = p;
             return result;
         }
-
-        UwType_Unsigned next_order = result.unsigned_value * radix;
-        if (next_order / radix != result.unsigned_value) {
+        if (result.unsigned_value > UW_UNSIGNED_MAX / radix) {
             // overflow
             return amw_parser_error(parser, *pos, "Numeric overflow");
         }
-        result.unsigned_value = next_order + chr;
+        UwType_Unsigned new_value = result.unsigned_value * radix + chr;
+        if (new_value < result.unsigned_value) {
+            // overflow
+            return amw_parser_error(parser, *pos, "Numeric overflow");
+        }
+        result.unsigned_value = new_value;
 
         p++;
         if (end_of_line(current_line, p)) {
@@ -1151,7 +1158,11 @@ decimal_float_only:
         if (chr == '-' || chr == '+') {
             pos++;
         }
-        pos = skip_digits(current_line, pos);
+        unsigned next_pos = skip_digits(current_line, pos);
+        if (next_pos == pos) {
+            return amw_parser_error(parser, start_pos, "Bad exponent");
+        }
+        pos = next_pos;
 
     } else if (chr != AMW_COMMENT && chr != ':' && !uw_isspace(chr)) {
         return amw_parser_error(parser, start_pos, "Bad number");
@@ -1167,6 +1178,8 @@ done:
         double n = strtod(number, nullptr);
         if (errno == ERANGE) {
             return amw_parser_error(parser, start_pos, "Floating point overflow");
+        } else if (errno) {
+            return amw_parser_error(parser, start_pos, "Floating point conversion error");
         }
         if (sign < 0 && n != 0.0) {
             n = -n;
