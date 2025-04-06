@@ -941,55 +941,9 @@ end_of_datetime:
     return uw_move(&result);
 }
 
-static UwResult parse_timestamp(AmwParser* parser)
-/*
- * Parse value as timestamp starting from block indent in the current line.
- * Return UwTimestamp on success, UwStatus on error.
- */
-{
-    static char bad_timestamp[] = "Bad timestamp";
-    UWDECL_Timestamp(result);
-    UwValuePtr current_line = &parser->current_line;
-    unsigned pos = get_start_position(parser);
-    char32_t chr;
-
-    for (;;) {
-        chr = uw_char_at(current_line, pos);
-        if (!uw_isdigit(chr)) {
-            break;
-        }
-        if (result.ts_seconds > UW_UNSIGNED_MAX / 10) {
-            // overflow
-            return amw_parser_error(parser, pos, bad_timestamp);
-        }
-        uint64_t seconds = result.ts_seconds * 10 + chr - '0';
-        if (seconds < result.ts_seconds) {
-            // overflow
-            return amw_parser_error(parser, pos, bad_timestamp);
-        }
-        result.ts_seconds = seconds;
-        pos++;
-    }
-    if ( chr == '.') {
-        // parse nanoseconds
-        pos++;
-        if (!parse_nanosecond_frac(parser, &pos, &result.ts_nanoseconds)) {
-            return amw_parser_error(parser, pos, bad_timestamp);
-        }
-    }
-    pos = uw_string_skip_spaces(current_line, pos);
-    if (!end_of_line(current_line, pos)) {
-        chr = uw_char_at(current_line, pos);
-        if (chr != AMW_COMMENT) {
-            return amw_parser_error(parser, pos, bad_timestamp);
-        }
-    }
-    return uw_move(&result);
-}
-
 static UwResult parse_unsigned(AmwParser* parser, unsigned* pos, unsigned radix)
 /*
- * Helper function for _amw_parse_number
+ * Helper function for _amw_parse_number and parse_timestamp.
  * Parse current line starting from `pos` as unsigned integer value.
  *
  * Return value and update `pos` where conversion has stopped.
@@ -1078,6 +1032,40 @@ static unsigned skip_digits(UwValuePtr str, unsigned pos)
         pos++;
     }
     return pos;
+}
+
+static UwResult parse_timestamp(AmwParser* parser)
+/*
+ * Parse value as timestamp starting from block indent in the current line.
+ * Return UwTimestamp on success, UwStatus on error.
+ */
+{
+    static char bad_timestamp[] = "Bad timestamp";
+    UWDECL_Timestamp(result);
+    unsigned pos = get_start_position(parser);
+
+    UwValue seconds = parse_unsigned(parser, &pos, 10);
+    uw_return_if_error(&seconds);
+
+    result.ts_seconds = seconds.unsigned_value;
+
+    if (end_of_line(&parser->current_line, pos)) {
+        return uw_move(&result);
+    }
+
+    char32_t chr = uw_char_at(&parser->current_line, pos);
+    if ( chr == '.') {
+        // parse nanoseconds
+        pos++;
+        if (!parse_nanosecond_frac(parser, &pos, &result.ts_nanoseconds)) {
+            return amw_parser_error(parser, pos, bad_timestamp);
+        }
+    }
+    if (comment_or_end_of_line(parser, pos)) {
+        return uw_move(&result);
+    } else {
+        return amw_parser_error(parser, pos, bad_timestamp);
+    }
 }
 
 UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsigned* end_pos)
