@@ -743,6 +743,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     // make parser read nested block
     unsigned saved_block_indent = parser->block_indent;
     parser->block_indent = block_indent;
+    parser->blocklevel++;
 
     // read block
     UwValue lines = UwArray();
@@ -789,6 +790,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
     // finished reading nested block
     parser->block_indent = saved_block_indent;
+    parser->blocklevel--;
 
     if (!closing_quote_detected) {
 
