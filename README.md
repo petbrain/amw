@@ -195,8 +195,7 @@ The closing quote may have the same indent as the opening one but no less:
 ```
 
 Multi-line quoted strings are always folded.
-They are dedented and line breaks are coalesced and replaced with spaces
-unless the next line starts from space:
+They are dedented and empty lines are replaced with line breaks:
 ```
  +--- block indent
  |
@@ -212,7 +211,7 @@ unless the next line starts from space:
 "
 ```
 
-The resulting value will be: `Lorem  ipsum dolor sit`.
+The resulting value will be: `Lorem\n  ipsum dolor\nsit`.
 Note double space after the first token.
 
 If line breaks, heading or trailing spaces, quotes and other special characters are required, use escapes:
@@ -226,7 +225,10 @@ Unlike multiple-line, single-line quoted strings are not trimmed and all spaces 
 
 ### Folded strings
 
-See `Quoted strings` section for the folding rules.
+Folding rules:
+1. Lines are dedented.
+2. When concatenated, they are separated with space unless a string already starts with space.
+3. Empty lines are replaced with line breaks.
 
 
 ## Lists
