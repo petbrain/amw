@@ -456,36 +456,6 @@ static UwResult parse_literal_string(AmwParser* parser)
     return uw_array_join('\n', &lines);
 }
 
-static UwResult parse_folded_string(AmwParser* parser)
-{
-    TRACEPOINT();
-
-    UwValue lines = _amw_read_block(parser);
-    uw_return_if_error(&lines);
-
-    // normalize list of lines
-
-    if (!uw_array_dedent(&lines)) {
-        return UwOOM();
-    }
-    // drop empty lines
-    unsigned len = uw_array_length(&lines);
-    for (unsigned i = len; i--;) {{
-        UwValue line = uw_array_item(&lines, i);
-        if (uw_strlen(&line) == 0) {
-            uw_array_del(&lines, i, i + 1);
-            len--;
-        }
-    }}
-    if (len == 0) {
-        // return empty string
-        return UwString();
-    }
-
-    // return concatenated lines
-    return uw_array_join(' ', &lines);
-}
-
 UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_number,
                             char32_t quote, unsigned start_pos, unsigned* end_pos)
 {
@@ -497,7 +467,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
         return UwString();
     }
     UwValue result = uw_create_empty_string(
-        len - start_pos,  // guesswork
+        len - start_pos,  // unescaped string can be shorter
         uw_string_char_size(line)
     );
     unsigned pos = start_pos;
@@ -621,6 +591,112 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
     return uw_move(&result);
 }
 
+static UwResult fold_lines(AmwParser* parser, UwValuePtr lines, char32_t quote, UwValuePtr line_numbers)
+/*
+ * Fold list of lines and return concatenated string.
+ *
+ * If quote is nonzero, unescape lines.
+ */
+{
+    if (!uw_array_dedent(lines)) {
+        return UwOOM();
+    }
+    unsigned len = uw_array_length(lines);
+
+    // skip leading empty lines
+    unsigned start_i = 0;
+    for (; start_i < len; start_i++) {{
+        UwValue line = uw_array_item(lines, start_i);
+        if (uw_strlen(&line) != 0) {
+            break;
+        }
+    }}
+    if (start_i == len) {
+        // return empty string
+        return UwString();
+    }
+
+    // skip trailing empty lines
+    unsigned end_i = len;
+    for (; end_i; end_i--) {{
+        UwValue line = uw_array_item(lines, end_i - 1);
+        if (uw_strlen(&line) != 0) {
+            break;
+        }
+    }}
+    if (end_i == 0) {
+        // return empty string
+        return UwString();
+    }
+
+    // calculate length of result
+    unsigned result_len = end_i - start_i - 1;  // reserve space for separators
+    uint8_t char_size = 1;
+    for (unsigned i = start_i; i < end_i; i++) {{
+        UwValue line = uw_array_item(lines, i);
+        result_len += uw_strlen(&line);
+        uint8_t cs = uw_string_char_size(&line);
+        if (cs > char_size) {
+            char_size = cs;
+        }
+    }}
+
+    // allocate result
+    UwValue result = uw_create_empty_string(result_len, char_size);
+    uw_return_if_error(&result);
+
+    // concatenate lines
+    bool prev_LF = false;
+    for (unsigned i = start_i; i < end_i; i++) {{
+        UwValue line = uw_array_item(lines, i);
+        if (i > start_i) {
+            if (uw_strlen(&line) == 0) {
+                // treat empty lines as LF
+                if (!uw_string_append(&line, '\n')) {
+                    return UwOOM();
+                }
+                prev_LF = true;
+            } else {
+                if (prev_LF) {
+                    // do not append separator if previous line was empty
+                    prev_LF = false;
+                } else {
+                    if (uw_isspace(uw_char_at(&line, 0))) {
+                        // do not append separator if the line aleady starts with space
+                    } else {
+                        if (!uw_string_append(&result, ' ')) {
+                            return UwOOM();
+                        }
+                    }
+                }
+            }
+        }
+        if (quote) {
+            UwValue line_number = uw_array_item(line_numbers, i);
+            UwValue unescaped = _amw_unescape_line(parser, &line, line_number.unsigned_value, quote, 0, nullptr);
+            uw_return_if_error(&unescaped);
+            if (!uw_string_append(&result, &unescaped)) {
+                return UwOOM();
+            }
+        } else {
+            if (!uw_string_append(&result, &line)) {
+                return UwOOM();
+            }
+        }
+    }}
+    return uw_move(&result);
+}
+
+static UwResult parse_folded_string(AmwParser* parser)
+{
+    TRACEPOINT();
+
+    UwValue lines = _amw_read_block(parser);
+    uw_return_if_error(&lines);
+
+    return fold_lines(parser, &lines, 0, nullptr);
+}
+
 static bool find_closing_quote(UwValuePtr line, char32_t quote, unsigned start_pos, unsigned* end_pos)
 /*
  * Helper function for parse_quoted_string.
@@ -637,7 +713,6 @@ static bool find_closing_quote(UwValuePtr line, char32_t quote, unsigned start_p
             // continue searching
             start_pos = *end_pos + 1;
         } else {
-            (*end_pos)++;
             return true;
         }
     }
@@ -658,13 +733,16 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     // process first line
     if (find_closing_quote(&parser->current_line, quote, opening_quote_pos + 1, end_pos)) {
         // single-line string
+        (*end_pos)++;
         return _amw_unescape_line(parser, &parser->current_line, parser->line_number,
                                   quote, opening_quote_pos + 1, nullptr);
     }
 
-    // start nested block for reading multi-line string
+    unsigned block_indent = opening_quote_pos + 1;
+
+    // make parser read nested block
     unsigned saved_block_indent = parser->block_indent;
-    parser->block_indent = opening_quote_pos + 1;
+    parser->block_indent = block_indent;
 
     // read block
     UwValue lines = UwArray();
@@ -675,26 +753,31 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
     bool closing_quote_detected = false;
     for (;;) {{
-        // append line
-        UwValue line = uw_substr(&parser->current_line, parser->block_indent, UINT_MAX);
-        uw_return_if_error(&line);
-
         // append line number
         UwValue n = UwUnsigned(parser->line_number);
         if (!uw_array_append(&line_numbers, &n)) {
             return UwOOM();
         }
-        if (find_closing_quote(&parser->current_line, quote, opening_quote_pos + 1, end_pos)) {
+        // append line
+        if (find_closing_quote(&parser->current_line, quote, block_indent, end_pos)) {
             // final line
-            UwValue final_line = uw_substr(&line, 0, *end_pos - 1);
+            UwValue final_line = uw_substr(&parser->current_line, block_indent, *end_pos);
+            if (!uw_string_rtrim(&final_line)) {
+                return UwOOM();
+            }
             if (!uw_array_append(&lines, &final_line)) {
                 return UwOOM();
             }
+            (*end_pos)++;
             closing_quote_detected = true;
             break;
-        }
-        if (!uw_array_append(&lines, &line)) {
-            return UwOOM();
+        } else {
+            // intermediate line
+            UwValue line = uw_substr(&parser->current_line, block_indent, UINT_MAX);
+            uw_return_if_error(&line);
+            if (!uw_array_append(&lines, &line)) {
+                return UwOOM();
+            }
         }
         // read next line
         UwValue status = _amw_read_block_line(parser);
@@ -704,7 +787,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
         uw_return_if_error(&status);
     }}
 
-    // end nested block
+    // finished reading nested block
     parser->block_indent = saved_block_indent;
 
     if (!closing_quote_detected) {
@@ -719,44 +802,9 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
         }
     }
 
-    // fold lines
+    // fold and unescape
 
-    if (!uw_array_dedent(&lines)) {
-        return UwOOM();
-    }
-
-    // drop empty lines
-    unsigned len = uw_array_length(&lines);
-    for (unsigned i = len; i--;) {{
-        UwValue line = uw_array_item(&lines, i);
-        if (uw_strlen(&line) == 0) {
-            uw_array_del(&lines, i, i + 1);
-            uw_array_del(&line_numbers, i, i + 1);
-            len--;
-        }
-    }}
-    if (len == 0) {
-        // return empty string
-        return UwString();
-    }
-
-    // unescape lines
-    for (unsigned i = 0; i < len; i++) {{
-        UwValue line = uw_array_item(&lines, i);
-        uw_return_if_error(&line);
-
-        UwValue line_number = uw_array_item(&lines, i);
-        uw_return_if_error(&line_number);
-
-        UwValue unescaped = _amw_unescape_line(parser, &line, line_number.unsigned_value, quote, 0, nullptr);
-        uw_return_if_error(&unescaped);
-
-        UwValue status = uw_array_set_item(&lines, i, &unescaped);
-        uw_return_if_error(&status);
-    }}
-
-    // return concatenated lines
-    return uw_array_join(' ', &lines);
+    return fold_lines(parser, &lines, quote, &line_numbers);
 }
 
 static bool parse_nanosecond_frac(AmwParser* parser, unsigned* pos, uint32_t* result)
@@ -1508,7 +1556,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
 
     // check for quoted string
 
-    if (chr == '"' || chr == '\"') {
+    if (chr == '"' || chr == '\'') {
         // quoted string
         unsigned start_line = parser->line_number;
         unsigned end_pos;
