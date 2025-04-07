@@ -1331,7 +1331,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
     unsigned key_indent = get_start_position(parser);
 
     for (;;) {
-        TRACE("parse value from position %u", value_pos);
+        TRACE("parse value (line %u) from position %u", parser->line_number, value_pos);
         {
             // parse value as a nested block
 
@@ -1353,6 +1353,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
 
             UwValue status = _amw_read_block_line(parser);
             if (_amw_end_of_block(&status)) {
+                TRACE("end of map");
                 break;
             }
             uw_return_if_error(&status);
@@ -1389,34 +1390,6 @@ static UwResult is_kv_separator(AmwParser* parser, unsigned colon_pos)
     uw_return_if_error(&convspec);
 
     return UwBool(uw_is_string(&convspec));
-}
-
-static UwResult parse_literal_string_or_map(AmwParser* parser)
-/*
- * Search key-value separator in the first line of current block.
- * If found, parse current block as a map. If not, parse as a literal string.
- */
-{
-    TRACEPOINT();
-
-    unsigned start_pos = get_start_position(parser);
-
-    // look for key-value separator
-    unsigned colon_pos;
-    if (uw_strchr(&parser->current_line, ':', start_pos, &colon_pos)) {
-        UwValue kvs = is_kv_separator(parser, colon_pos);
-        uw_return_if_error(&kvs);
-
-        if (kvs.bool_value) {
-            // found, parse map
-            UwValue first_key = uw_substr(&parser->current_line, start_pos, colon_pos);
-            if (!uw_string_trim(&first_key)) {
-                return UwOOM();
-            }
-            return parse_map(parser, &first_key, colon_pos + 2);
-        }
-    }
-    return parse_literal_string(parser);
 }
 
 static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned end_pos, unsigned* nested_value_pos)
@@ -1463,7 +1436,7 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
         if (kvs.bool_value) {
             // found key-value separator
             if (nested_value_pos) {
-                // it was expected, just return value
+                // it was anticipated, just return value
                 *nested_value_pos = end_pos + 1;
                 return uw_clone(value);
             }
@@ -1558,7 +1531,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
             return parse_list(parser);
         }
         // otherwise, it's a literal string or map
-        return parse_literal_string_or_map(parser);
+        goto parse_literal_string_or_map;
     }
 
     // check for quoted string
@@ -1614,9 +1587,30 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         return check_value_end(parser, &number, end_pos, nested_value_pos);
     }
 
-    // parsed none of above, then
+parse_literal_string_or_map:
+    {
+        // look for key-value separator
+        unsigned colon_pos;
+        if (uw_strchr(&parser->current_line, ':', start_pos, &colon_pos)) {
+            UwValue kvs = is_kv_separator(parser, colon_pos);
+            uw_return_if_error(&kvs);
 
-    return parse_literal_string_or_map(parser);
+            if (kvs.bool_value) {
+                // found key-value separator, get key
+                UwValue key = uw_substr(&parser->current_line, start_pos, colon_pos);
+                uw_return_if_error(&key);
+
+                if (nested_value_pos) {
+                    // key was anticipated, simply return it
+                    *nested_value_pos = colon_pos + 1;
+                    return uw_move(&key);
+                }
+                // parse map
+                return parse_map(parser, &key, colon_pos + 2);
+            }
+        }
+    }
+    return parse_literal_string(parser);
 }
 
 static UwResult value_parser_func(AmwParser* parser)
