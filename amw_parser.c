@@ -791,14 +791,19 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     parser->block_indent = saved_block_indent;
 
     if (!closing_quote_detected) {
-        // check if current_line (i.e. next line after the block)
-        // starts with a quote that has the same indent as the opening quote
+
+        // the above loop terminated abnormally, need to read next line
+        UwValue status = _amw_read_block_line(parser);
+        if (_amw_end_of_block(&status)) {
+            return amw_parser_error(parser, parser->current_indent, "String has no closing quote");
+        }
+        // check if the line starts with a quote with the same indent as the opening quote
         if (parser->current_indent == opening_quote_pos
             && uw_char_at(&parser->current_line, parser->current_indent) == quote) {
 
             *end_pos = opening_quote_pos + 1;
         } else {
-            return amw_parser_error(parser, parser->current_indent, "String contains no closing quote");
+            return amw_parser_error(parser, parser->current_indent, "String has no closing quote");
         }
     }
 
