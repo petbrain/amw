@@ -54,7 +54,7 @@
 #endif
 
 // forward declarations
-static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos);
+static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwValuePtr convspec);
 static UwResult value_parser_func(AmwParser* parser);
 static UwResult parse_raw_value(AmwParser* parser);
 static UwResult parse_literal_string(AmwParser* parser);
@@ -371,20 +371,22 @@ static UwResult parse_convspec(AmwParser* parser, unsigned opening_colon_pos, un
  * On error return UwStatus.
  */
 {
-    unsigned start_pos = opening_colon_pos + 1;
+    UwValuePtr current_line = &parser->current_line;
 
-    if (!uw_strchr(&parser->current_line, ':', start_pos, end_pos)) {
+    unsigned start_pos = opening_colon_pos + 1;
+    unsigned closing_colon_pos;
+    if (!uw_strchr(current_line, ':', start_pos, &closing_colon_pos)) {
         return UwNull();
     }
-    if (*end_pos == start_pos) {
+    if (closing_colon_pos == start_pos) {
         // empty conversion specifier
         return UwNull();
     }
-    if (!isspace_or_eol_at(&parser->current_line, *end_pos + 1)) {
+    if (!isspace_or_eol_at(current_line, closing_colon_pos + 1)) {
         // not a conversion specifier
         return UwNull();
     }
-    UwValue convspec = uw_substr(&parser->current_line, start_pos, *end_pos);
+    UwValue convspec = uw_substr(current_line, start_pos, closing_colon_pos);
     uw_return_if_error(&convspec);
 
     if (!uw_string_trim(&convspec)) {
@@ -394,10 +396,7 @@ static UwResult parse_convspec(AmwParser* parser, unsigned opening_colon_pos, un
         // such a conversion specifier is not defined
         return UwNull();
     }
-    (*end_pos)++;
-    if (uw_isspace(uw_char_at(&parser->current_line, *end_pos))) {
-        (*end_pos)++;
-    }
+    *end_pos = closing_colon_pos + 1;
     return uw_move(&convspec);
 }
 
@@ -1306,7 +1305,7 @@ static UwResult parse_list(AmwParser* parser)
     return uw_move(&result);
 }
 
-static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned value_pos)
+static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, UwValuePtr convspec_arg, unsigned value_pos)
 /*
  * Parse map.
  *
@@ -1321,8 +1320,8 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
     UwValue result = UwMap();
     uw_return_if_error(&result);
 
-    UwValue key = uw_deepcopy(first_key);
-    uw_return_if_error(&key);
+    UwValue key = uw_clone(first_key);
+    UwValue convspec = uw_clone(convspec_arg);
 
     /*
      * All keys in the map must have the same indent.
@@ -1335,11 +1334,16 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
         {
             // parse value as a nested block
 
+            AmwBlockParserFunc parser_func = value_parser_func;
+            if (uw_is_string(&convspec)) {
+                parser_func = get_custom_parser(parser, &convspec);
+            }
             UwValue value = UwNull();
             if (comment_or_end_of_line(parser, value_pos)) {
-                value = parse_nested_block_from_next_line(parser, value_parser_func);
+                value = parse_nested_block_from_next_line(parser, parser_func);
+
             } else {
-                value = parse_nested_block(parser, value_pos, value_parser_func);
+                value = parse_nested_block(parser, value_pos, parser_func);
             }
             uw_return_if_error(&value);
 
@@ -1350,6 +1354,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
         TRACE("parse next key");
         {
             uw_destroy(&key);
+            uw_destroy(&convspec);
 
             UwValue status = _amw_read_block_line(parser);
             if (_amw_end_of_block(&status)) {
@@ -1362,7 +1367,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
                 return amw_parser_error(parser, parser->current_indent, "Bad indentation of map key");
             }
 
-            key = parse_value(parser, &value_pos);
+            key = parse_value(parser, &value_pos, &convspec);
             uw_return_if_error(&key);
         }
     }
@@ -1370,29 +1375,49 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, unsigned valu
     return uw_move(&result);
 }
 
-static UwResult is_kv_separator(AmwParser* parser, unsigned colon_pos)
+static UwResult is_kv_separator(AmwParser* parser, unsigned colon_pos,
+                                UwValuePtr convspec_out, unsigned *value_pos)
 /*
  * Return UwBool(true) if colon_pos is followed by end of line, space, or conversion specifier.
+ * Write conversion specifier to `convspec_out` if value is followed by conversion specifier.
+ * Write position of value to value_pos.
  */
 {
-    if (end_of_line(&parser->current_line, colon_pos + 1)) {
+    UwValuePtr current_line = &parser->current_line;
+
+    unsigned next_pos = colon_pos + 1;
+
+    if (end_of_line(current_line, next_pos)) {
+        *value_pos = next_pos;
         return UwBool(true);
     }
-    char32_t chr = uw_char_at(&parser->current_line, colon_pos + 1);
-    if (uw_isspace(chr)) {
-        return UwBool(true);
+    char32_t chr = uw_char_at(current_line, next_pos);
+    if (isspace(chr)) {
+        *value_pos = next_pos + 1;  // value should be separated from key by at least one space
+        next_pos = uw_string_skip_spaces(current_line, next_pos);
+        // cannot be end of line here because current line is R-trimmed and EOL is already checked
+        chr = uw_char_at(current_line, next_pos);
     }
     if (chr != ':') {
-        return UwBool(false);
+        // no conversion specifier
+        return UwBool(true);
     }
-    unsigned value_pos;
-    UwValue convspec = parse_convspec(parser, colon_pos + 1, &value_pos);
+
+    // try parsing conversion specifier
+    // value_pos will be updated only if conversion specifier is valid
+    UwValue convspec = parse_convspec(parser, next_pos, value_pos);
     uw_return_if_error(&convspec);
 
-    return UwBool(uw_is_string(&convspec));
+    if (uw_is_string(&convspec)) {
+        if (convspec_out) {
+            *convspec_out = uw_move(&convspec);
+        }
+    }
+    return UwBool(true);
 }
 
-static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned end_pos, unsigned* nested_value_pos)
+static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned end_pos,
+                                unsigned* nested_value_pos, UwValuePtr convspec_out)
 /*
  * Helper function for parse_value.
  *
@@ -1403,7 +1428,8 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
  * and _must_ end with key-value separator.
  *
  * On success return parsed value.
- * If `nested_value_pos' is provided, write position of the next char after colon to it.
+ * If `nested_value_pos' is not null, write position of the next char after colon to it
+ * and write conversion specifier to `convspec_out` if value is followed by conversion specifier.
  *
  * Read next line if nothing to parse on the current_line.
  *
@@ -1430,19 +1456,23 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
 
     char32_t chr = uw_char_at(&parser->current_line, end_pos);
     if (chr == ':') {
-        UwValue kvs = is_kv_separator(parser, end_pos);
+        // check key-value separator
+        UwValue convspec = UwNull();
+        unsigned value_pos;
+        UwValue kvs = is_kv_separator(parser, end_pos, &convspec, &value_pos);
         uw_return_if_error(&kvs);
 
         if (kvs.bool_value) {
             // found key-value separator
             if (nested_value_pos) {
-                // it was anticipated, just return value
-                *nested_value_pos = end_pos + 1;
+                // it was anticipated, just return the value
+                *nested_value_pos = value_pos;
+                *convspec_out = uw_move(&convspec);
                 return uw_clone(value);
             }
             // parse map
             UwValue first_key = uw_clone(value);
-            return parse_map(parser, &first_key, end_pos + 2);
+            return parse_map(parser, &first_key, &convspec, value_pos);
         }
         return amw_parser_error(parser, end_pos + 1, "Bad character encountered");
     }
@@ -1459,7 +1489,7 @@ static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned en
     return uw_clone(value);
 }
 
-static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
+static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwValuePtr convspec_out)
 /*
  * Parse value starting from `current_line[block_indent]` .
  *
@@ -1467,7 +1497,8 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
  * and _must_ end with colon or include a colon if it's a literal strings.
  *
  * On success return parsed value.
- * If `nested_value_pos' is provided, write position of the next char after colon to it.
+ * If `nested_value_pos' is provided, write position of the next char after colon to it
+ * and write conversion specifier to `convspec_out` if it's followed by conversion specifier.
  *
  * On error return status and set `parser->result["error"]`.
  */
@@ -1498,10 +1529,21 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         }
         // we have conversion specifier
         if (end_of_line(&parser->current_line, value_pos)) {
-            return parse_nested_block_from_next_line(
-                parser, get_custom_parser(parser, &convspec)
-            );
+
+            // conversion specifier is followed by LF
+            // continue parsing CURRENT block from next line
+            UwValue status = _amw_read_block_line(parser);
+            if (_amw_end_of_block(&status)) {
+                return amw_parser_error(parser, parser->current_indent, "Empty block");
+            }
+            uw_return_if_error(&status);
+
+            // call parser function
+            AmwBlockParserFunc parser_func = get_custom_parser(parser, &convspec);
+            return parser_func(parser);
+
         } else {
+            // value is on the same line, parse it as nested block
             return parse_nested_block(
                 parser, value_pos, get_custom_parser(parser, &convspec)
             );
@@ -1520,7 +1562,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         if ('0' <= next_chr && next_chr <= '9') {
             unsigned end_pos;
             UwValue number = _amw_parse_number(parser, next_pos, -1, &end_pos);
-            return check_value_end(parser, &number, end_pos, nested_value_pos);
+            return check_value_end(parser, &number, end_pos, nested_value_pos, convspec_out);
         }
         // if followed by space or end of line, that's a list item
         if (isspace_or_eol_at(&parser->current_line, next_pos)) {
@@ -1546,7 +1588,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         unsigned end_line = parser->line_number;
         if (end_line == start_line) {
             // single-line string can be a map key
-            return check_value_end(parser, &str, end_pos, nested_value_pos);
+            return check_value_end(parser, &str, end_pos, nested_value_pos, convspec_out);
         } else if (comment_or_end_of_line(parser, end_pos)) {
             // multi-line string cannot be a key
             return uw_move(&str);
@@ -1560,15 +1602,15 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
     TRACE("trying reserved keywords");
     if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 4, "null")) {
         UwValue null_value = UwNull();
-        return check_value_end(parser, &null_value, start_pos + 4, nested_value_pos);
+        return check_value_end(parser, &null_value, start_pos + 4, nested_value_pos, convspec_out);
     }
     if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 4, "true")) {
         UwValue true_value = UwBool(true);
-        return check_value_end(parser, &true_value, start_pos + 4, nested_value_pos);
+        return check_value_end(parser, &true_value, start_pos + 4, nested_value_pos, convspec_out);
     }
     if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 5, "false")) {
         UwValue false_value = UwBool(false);
-        return check_value_end(parser, &false_value, start_pos + 5, nested_value_pos);
+        return check_value_end(parser, &false_value, start_pos + 5, nested_value_pos, convspec_out);
     }
 
     // try parsing number
@@ -1584,7 +1626,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
     if ('0' <= chr && chr <= '9') {
         unsigned end_pos;
         UwValue number = _amw_parse_number(parser, start_pos, 1, &end_pos);
-        return check_value_end(parser, &number, end_pos, nested_value_pos);
+        return check_value_end(parser, &number, end_pos, nested_value_pos, convspec_out);
     }
     TRACE("not a number, pasring literal string or map");
 
@@ -1593,7 +1635,10 @@ parse_literal_string_or_map:
         // look for key-value separator
         unsigned colon_pos;
         if (uw_strchr(&parser->current_line, ':', start_pos, &colon_pos)) {
-            UwValue kvs = is_kv_separator(parser, colon_pos);
+
+            UwValue convspec = UwNull();
+            unsigned value_pos;
+            UwValue kvs = is_kv_separator(parser, colon_pos, &convspec, &value_pos);
             uw_return_if_error(&kvs);
 
             if (kvs.bool_value) {
@@ -1601,22 +1646,15 @@ parse_literal_string_or_map:
                 UwValue key = uw_substr(&parser->current_line, start_pos, colon_pos);
                 uw_return_if_error(&key);
 
-                unsigned next_pos = colon_pos + 1;
-
                 if (nested_value_pos) {
                     // key was anticipated, simply return it
-                    *nested_value_pos = next_pos;
+                    *nested_value_pos = value_pos;
+                    *convspec_out = uw_move(&convspec);
                     return uw_move(&key);
                 }
 
                 // parse map
-
-                // if colon is followed by space, increment next_pos,
-                // otherwise it could be conversion specifier
-                if (uw_isspace(uw_char_at(&parser->current_line, next_pos))) {
-                    next_pos++;
-                }
-                return parse_map(parser, &key, next_pos);
+                return parse_map(parser, &key, &convspec, value_pos);
             }
         }
     }
@@ -1625,7 +1663,7 @@ parse_literal_string_or_map:
 
 static UwResult value_parser_func(AmwParser* parser)
 {
-    return parse_value(parser, nullptr);
+    return parse_value(parser, nullptr, nullptr);
 }
 
 UwResult amw_parse(UwValuePtr markup)
