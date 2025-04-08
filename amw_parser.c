@@ -1386,7 +1386,7 @@ static UwResult is_kv_separator(AmwParser* parser, unsigned colon_pos)
         return UwBool(false);
     }
     unsigned value_pos;
-    UwValue convspec = parse_convspec(parser, colon_pos, &value_pos);
+    UwValue convspec = parse_convspec(parser, colon_pos + 1, &value_pos);
     uw_return_if_error(&convspec);
 
     return UwBool(uw_is_string(&convspec));
@@ -1586,6 +1586,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos)
         UwValue number = _amw_parse_number(parser, start_pos, 1, &end_pos);
         return check_value_end(parser, &number, end_pos, nested_value_pos);
     }
+    TRACE("not a number, pasring literal string or map");
 
 parse_literal_string_or_map:
     {
@@ -1600,13 +1601,22 @@ parse_literal_string_or_map:
                 UwValue key = uw_substr(&parser->current_line, start_pos, colon_pos);
                 uw_return_if_error(&key);
 
+                unsigned next_pos = colon_pos + 1;
+
                 if (nested_value_pos) {
                     // key was anticipated, simply return it
-                    *nested_value_pos = colon_pos + 1;
+                    *nested_value_pos = next_pos;
                     return uw_move(&key);
                 }
+
                 // parse map
-                return parse_map(parser, &key, colon_pos + 2);
+
+                // if colon is followed by space, increment next_pos,
+                // otherwise it could be conversion specifier
+                if (uw_isspace(uw_char_at(&parser->current_line, next_pos))) {
+                    next_pos++;
+                }
+                return parse_map(parser, &key, next_pos);
             }
         }
     }
