@@ -328,6 +328,7 @@ static UwResult parse_nested_block_from_next_line(AmwParser* parser, AmwBlockPar
 
     // temporarily increment block indent by one and read next line
     parser->block_indent++;
+    parser->skip_comments = true;
     UwValue status = _amw_read_block_line(parser);
     parser->block_indent--;
 
