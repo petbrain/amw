@@ -77,6 +77,9 @@ AmwParser* amw_create_parser(UwValuePtr markup)
     parser->blocklevel = 1;
     parser->max_blocklevel = AMW_MAX_RECURSION_DEPTH;
 
+    parser->json_depth = 1;
+    parser->max_json_depth = AMW_MAX_RECURSION_DEPTH;
+
     parser->skip_comments = true;
 
     UwValue status = UwNull();

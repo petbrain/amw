@@ -71,6 +71,8 @@ static UwResult parse_array(AmwParser* parser, unsigned start_pos, unsigned* end
  * `start_pos` points to the next character after opening square bracket
  */
 {
+    parser->json_depth++;
+
     UwValue result = UwArray();
     uw_return_if_error(&result);
 
@@ -79,6 +81,7 @@ static UwResult parse_array(AmwParser* parser, unsigned start_pos, unsigned* end
 
     if (chr.unsigned_value == ']') {
         // empty array
+        parser->json_depth--;
         return uw_move(&result);
     }
 
@@ -98,6 +101,7 @@ static UwResult parse_array(AmwParser* parser, unsigned start_pos, unsigned* end
         if (chr.unsigned_value == ']') {
             // done
             *end_pos = start_pos + 1;
+            parser->json_depth--;
             return uw_move(&result);
         }
         if (chr.unsigned_value != ',') {
@@ -145,6 +149,8 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
  * `start_pos` points to the next character after opening curly bracket
  */
 {
+    parser->json_depth++;
+
     UwValue result = UwMap();
     uw_return_if_error(&result);
 
@@ -153,6 +159,7 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
 
     if (chr.unsigned_value == '}') {
         // empty object
+        parser->json_depth--;
         return uw_move(&result);
     }
 
@@ -168,6 +175,7 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
         if (chr.unsigned_value == '}') {
             // done
             *end_pos = start_pos + 1;
+            parser->json_depth--;
             return uw_move(&result);
         }
         if (chr.unsigned_value != ',') {
@@ -181,6 +189,10 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
 
 static UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, unsigned* end_pos)
 {
+    if (parser->json_depth >= parser->max_json_depth) {
+        return amw_parser_error(parser, parser->current_indent, "Maximum resursion depth exceeded");
+    }
+
     UwValue first_char = skip_spaces(parser, &start_pos, __LINE__);
     uw_return_if_error(&first_char);
 

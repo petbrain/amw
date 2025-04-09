@@ -40,6 +40,8 @@ typedef struct  {
     unsigned  block_indent;    // indent of current block
     unsigned  blocklevel;      // recursion level
     unsigned  max_blocklevel;
+    unsigned  json_depth;      // recursion level for JSON
+    unsigned  max_json_depth;
     bool      skip_comments;   // initially true to skip leading comments in the block
     bool      eof;
     _UwValue  custom_parsers;
