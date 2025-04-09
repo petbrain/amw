@@ -81,6 +81,7 @@ static UwResult parse_array(AmwParser* parser, unsigned start_pos, unsigned* end
 
     if (chr.unsigned_value == ']') {
         // empty array
+        *end_pos = start_pos + 1;
         parser->json_depth--;
         return uw_move(&result);
     }
@@ -159,6 +160,7 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
 
     if (chr.unsigned_value == '}') {
         // empty object
+        *end_pos = start_pos + 1;
         parser->json_depth--;
         return uw_move(&result);
     }
