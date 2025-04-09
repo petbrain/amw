@@ -16,7 +16,7 @@ I doubt AMW is shitty enough for humans to become popular so no one will be offe
 
 ## Motivation
 
-* I always forget what > and | in YAML stand for, not mentioning other cryptic stuff.
+* I always forget what `>` and `|` in YAML stand for, not mentioning other cryptic stuff.
 * Need for clear parsing rules.
 * Need for clear data type specification.
 * Need for more data types, e.g. dates.
@@ -101,7 +101,9 @@ Strings may span multiple lines. There are two types of strings: literal and quo
 ### Literal strings
 
 Literal strings may span multiple lines.
-All line breaks are included to the parsed value including the final one.
+All line breaks are included into the parsed value including the final one.
+
+Note that single-line literal strings do not contain line break.
 
 As long as the block ends only when a line has lower indent,
 lines may have greater individual indents within the block.
@@ -167,8 +169,8 @@ The following markup is prohibited. It's neither aesthetic nor simple to parse.
 
 Literal strings cannot start with numbers and reserver keywords `null`, `true`, `false`:
 ```
-distance: 25.5 plus # bad markup
-error: null pointer # bad markup
+distance: 25.5 miles # bad markup
+error: null pointer  # bad markup
 ```
 
 ### Quoted strings
@@ -212,7 +214,7 @@ They are dedented and empty lines are replaced with line breaks:
 "
 ```
 
-The resulting value will be: `Lorem\n  ipsum dolor\nsit`.
+The resulting value will be: `Lorem\n\n  ipsum dolor\nsit`.
 Note double space after the first token.
 
 If line breaks, heading or trailing spaces, quotes and other special characters are required, use escapes:
@@ -280,7 +282,7 @@ Map keys can be one of the following types:
 
 * null
 * boolean
-* signed integer
+* integer
 * float
 * string
 
@@ -411,7 +413,6 @@ success: true  # this is a comment
 greeting: "Hello!" # this is a comment
 greeting: Hello! # this is a part of literal string
 distance: 25.5  # this is a comment
-distance: 25.5 plus # bad markup
 ```
 
 ### Comments in JSON
