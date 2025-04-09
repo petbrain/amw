@@ -92,7 +92,7 @@ In addition, T or space separator between date and time and dashes in the date p
 ### Numbers
 
 Positive integers returned as signed if they are within positive range of 64-bit signed value.
-Otherwise they are returned as unsigned.
+Bigger numbers are returned as unsigned.
 
 ## Strings
 
