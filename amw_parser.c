@@ -75,7 +75,7 @@ AmwParser* amw_create_parser(UwValuePtr markup)
     parser->markup = uw_clone(markup);
 
     parser->blocklevel = 1;
-    parser->max_blocklevel = AMW_MAX_RESURSION_DEPTH;
+    parser->max_blocklevel = AMW_MAX_RECURSION_DEPTH;
 
     parser->skip_comments = true;
 

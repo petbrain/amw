@@ -6,7 +6,7 @@ extern "C" {
 
 #include <uw.h>
 
-#define AMW_MAX_RESURSION_DEPTH  100
+#define AMW_MAX_RECURSION_DEPTH  100
 
 #define AMW_COMMENT  '#'
 
