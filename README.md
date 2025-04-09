@@ -62,7 +62,7 @@ The following conversions are supported:
 * `:folded:` parse value as string and fold it, same as in YAML
 * `:datetime:` parse value as datetime
 * `:timestamp:` parse value as timestamp in the form seconds\[.frac\], up to nanosecond resolution
-* `:json:` parse value as JSON (WIP)
+* `:json:` parse value as JSON
 
 Custom conversion routines can be set with `amw_set_custom_parser` function.
 
@@ -412,6 +412,18 @@ greeting: "Hello!" # this is a comment
 greeting: Hello! # this is a part of literal string
 distance: 25.5  # this is a comment
 distance: 25.5 plus # bad markup
+```
+
+### Comments in JSON
+
+Comments are allowed in multi-line JSON after any element:
+```
+{   # sample object
+
+    "foo"  # this is a key
+    :      # separator
+    "bar"  # this is a value
+}
 ```
 
 ## Type deduction rules

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <amw.h>
 
@@ -61,6 +62,8 @@ static UwResult parse_literal_string(AmwParser* parser);
 static UwResult parse_folded_string(AmwParser* parser);
 static UwResult parse_datetime(AmwParser* parser);
 static UwResult parse_timestamp(AmwParser* parser);
+
+static char number_terminators[] = { AMW_COMMENT, ':', 0 };
 
 
 AmwParser* amw_create_parser(UwValuePtr markup)
@@ -337,11 +340,7 @@ static UwResult parse_nested_block_from_next_line(AmwParser* parser, AmwBlockPar
     return parse_nested_block(parser, parser->block_indent + 1, parser_func);
 }
 
-static unsigned get_start_position(AmwParser* parser)
-/*
- * Return position of the first non-space character in the current block.
- * The block may start inside `current_line` for nested values of list or map.
- */
+unsigned _amw_get_start_position(AmwParser* parser)
 {
     if (parser->block_indent < parser->current_indent) {
         return parser->current_indent;
@@ -350,10 +349,7 @@ static unsigned get_start_position(AmwParser* parser)
     }
 }
 
-static bool comment_or_end_of_line(AmwParser* parser, unsigned position)
-/*
- * Check if current line ends at position or contains comment.
- */
+bool _amw_comment_or_end_of_line(AmwParser* parser, unsigned position)
 {
     position = uw_string_skip_spaces(&parser->current_line, position);
     return (end_of_line(&parser->current_line, position)
@@ -473,7 +469,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
     while (pos < len) {
         char32_t chr = uw_char_at(line, pos);
         if (chr == quote) {
-            // closing quote detected
+            // closing quotation mark detected
             break;
         }
         if (chr != '\\') {
@@ -594,7 +590,7 @@ static UwResult fold_lines(AmwParser* parser, UwValuePtr lines, char32_t quote, 
 /*
  * Fold list of lines and return concatenated string.
  *
- * If quote is nonzero, unescape lines.
+ * If `quote` is nonzero, unescape lines.
  */
 {
     if (!uw_array_dedent(lines)) {
@@ -696,18 +692,13 @@ static UwResult parse_folded_string(AmwParser* parser)
     return fold_lines(parser, &lines, 0, nullptr);
 }
 
-static bool find_closing_quote(UwValuePtr line, char32_t quote, unsigned start_pos, unsigned* end_pos)
-/*
- * Helper function for parse_quoted_string.
- * Search for closing quote in escaped line.
- * If found, write its position to `end_pos` and return true;
- */
+bool _amw_find_closing_quote(UwValuePtr line, char32_t quote, unsigned start_pos, unsigned* end_pos)
 {
     for (;;) {
         if (!uw_strchr(line, quote, start_pos, end_pos)) {
             return false;
         }
-        // check if the quote is not escaped
+        // check if the quotation mark is not escaped
         if (*end_pos && uw_char_at(line, *end_pos - 1) == '\\') {
             // continue searching
             start_pos = *end_pos + 1;
@@ -721,7 +712,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 /*
  * Parse quoted string starting from `opening_quote_pos` in the current line.
  *
- * Write next position after the closing quote to `end_pos`.
+ * Write next position after the closing quotation mark to `end_pos`.
  */
 {
     TRACEPOINT();
@@ -730,7 +721,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     char32_t quote = uw_char_at(&parser->current_line, opening_quote_pos);
 
     // process first line
-    if (find_closing_quote(&parser->current_line, quote, opening_quote_pos + 1, end_pos)) {
+    if (_amw_find_closing_quote(&parser->current_line, quote, opening_quote_pos + 1, end_pos)) {
         // single-line string
         (*end_pos)++;
         return _amw_unescape_line(parser, &parser->current_line, parser->line_number,
@@ -759,7 +750,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
             return UwOOM();
         }
         // append line
-        if (find_closing_quote(&parser->current_line, quote, block_indent, end_pos)) {
+        if (_amw_find_closing_quote(&parser->current_line, quote, block_indent, end_pos)) {
             // final line
             UwValue final_line = uw_substr(&parser->current_line, block_indent, *end_pos);
             if (!uw_string_rtrim(&final_line)) {
@@ -793,10 +784,12 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
     if (!closing_quote_detected) {
 
+        static char unterminated[] = "String has no closing quote";
+
         // the above loop terminated abnormally, need to read next line
         UwValue status = _amw_read_block_line(parser);
         if (_amw_end_of_block(&status)) {
-            return amw_parser_error(parser, parser->current_indent, "String has no closing quote");
+            return amw_parser_error(parser, parser->current_indent, unterminated);
         }
         // check if the line starts with a quote with the same indent as the opening quote
         if (parser->current_indent == opening_quote_pos
@@ -804,7 +797,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
 
             *end_pos = opening_quote_pos + 1;
         } else {
-            return amw_parser_error(parser, parser->current_indent, "String has no closing quote");
+            return amw_parser_error(parser, parser->current_indent, unterminated);
         }
     }
 
@@ -866,7 +859,7 @@ static UwResult parse_datetime(AmwParser* parser)
     static char bad_datetime[] = "Bad date/time";
     UWDECL_DateTime(result);
     UwValuePtr current_line = &parser->current_line;
-    unsigned pos = get_start_position(parser);
+    unsigned pos = _amw_get_start_position(parser);
     char32_t chr;
 
     // parse YYYY part
@@ -1096,7 +1089,7 @@ static UwResult parse_timestamp(AmwParser* parser)
 {
     static char bad_timestamp[] = "Bad timestamp";
     UWDECL_Timestamp(result);
-    unsigned pos = get_start_position(parser);
+    unsigned pos = _amw_get_start_position(parser);
 
     UwValue seconds = parse_unsigned(parser, &pos, 10);
     uw_return_if_error(&seconds);
@@ -1115,14 +1108,14 @@ static UwResult parse_timestamp(AmwParser* parser)
             return amw_parser_error(parser, pos, bad_timestamp);
         }
     }
-    if (comment_or_end_of_line(parser, pos)) {
+    if (_amw_comment_or_end_of_line(parser, pos)) {
         return uw_move(&result);
     } else {
         return amw_parser_error(parser, pos, bad_timestamp);
     }
 }
 
-UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsigned* end_pos)
+UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsigned* end_pos, char* allowed_terminators)
 {
     TRACEPOINT();
     TRACE("start_pos %u", start_pos);
@@ -1206,7 +1199,7 @@ decimal_float_only:
         }
         pos = next_pos;
 
-    } else if (chr != AMW_COMMENT && chr != ':' && !uw_isspace(chr)) {
+    } else if ( ! (uw_isspace(chr) || strchr(allowed_terminators, chr))) {
         return amw_parser_error(parser, start_pos, "Bad number");
     }
 
@@ -1264,7 +1257,7 @@ static UwResult parse_list(AmwParser* parser)
      * All list items must have the same indent.
      * Save indent of the first item (current one) and check it for subsequent items.
      */
-    unsigned item_indent = get_start_position(parser);
+    unsigned item_indent = _amw_get_start_position(parser);
 
     for (;;) {
         {
@@ -1277,7 +1270,7 @@ static UwResult parse_list(AmwParser* parser)
             // parse item as a nested block
 
             UwValue item = UwNull();
-            if (comment_or_end_of_line(parser, next_pos)) {
+            if (_amw_comment_or_end_of_line(parser, next_pos)) {
                 item = parse_nested_block_from_next_line(parser, value_parser_func);
             } else {
                 // nested block starts on the same line, increment block position
@@ -1327,7 +1320,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, UwValuePtr co
      * All keys in the map must have the same indent.
      * Save indent of the first key (current one) and check it for subsequent keys.
      */
-    unsigned key_indent = get_start_position(parser);
+    unsigned key_indent = _amw_get_start_position(parser);
 
     for (;;) {
         TRACE("parse value (line %u) from position %u", parser->line_number, value_pos);
@@ -1339,7 +1332,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, UwValuePtr co
                 parser_func = get_custom_parser(parser, &convspec);
             }
             UwValue value = UwNull();
-            if (comment_or_end_of_line(parser, value_pos)) {
+            if (_amw_comment_or_end_of_line(parser, value_pos)) {
                 value = parse_nested_block_from_next_line(parser, parser_func);
 
             } else {
@@ -1505,7 +1498,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwVal
 {
     TRACEPOINT();
 
-    unsigned start_pos = get_start_position(parser);
+    unsigned start_pos = _amw_get_start_position(parser);
 
     // Analyze first character.
     char32_t chr = uw_char_at(&parser->current_line, start_pos);
@@ -1561,7 +1554,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwVal
         // if followed by digit, it's a number
         if ('0' <= next_chr && next_chr <= '9') {
             unsigned end_pos;
-            UwValue number = _amw_parse_number(parser, next_pos, -1, &end_pos);
+            UwValue number = _amw_parse_number(parser, next_pos, -1, &end_pos, number_terminators);
             return check_value_end(parser, &number, end_pos, nested_value_pos, convspec_out);
         }
         // if followed by space or end of line, that's a list item
@@ -1589,7 +1582,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwVal
         if (end_line == start_line) {
             // single-line string can be a map key
             return check_value_end(parser, &str, end_pos, nested_value_pos, convspec_out);
-        } else if (comment_or_end_of_line(parser, end_pos)) {
+        } else if (_amw_comment_or_end_of_line(parser, end_pos)) {
             // multi-line string cannot be a key
             return uw_move(&str);
         } else {
@@ -1625,7 +1618,7 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwVal
     }
     if ('0' <= chr && chr <= '9') {
         unsigned end_pos;
-        UwValue number = _amw_parse_number(parser, start_pos, 1, &end_pos);
+        UwValue number = _amw_parse_number(parser, start_pos, 1, &end_pos, number_terminators);
         return check_value_end(parser, &number, end_pos, nested_value_pos, convspec_out);
     }
     TRACE("not a number, pasring literal string or map");

@@ -84,7 +84,7 @@ UwResult amw_parse_json(UwValuePtr markup);
 
 UwResult _amw_json_parser_func(AmwParser* parser);
 /*
- * Internal JSON parser function.
+ * JSON parser function for AMW :json: conversion specifier.
  */
 
 UwResult _amw_read_block_line(AmwParser* parser);
@@ -106,6 +106,17 @@ UwResult _amw_read_block(AmwParser* parser);
  * Read lines starting from current_line till the end of block.
  */
 
+unsigned _amw_get_start_position(AmwParser* parser);
+/*
+ * Return position of the first non-space character in the current block.
+ * The block may start inside `current_line` for nested values of list or map.
+ */
+
+bool _amw_comment_or_end_of_line(AmwParser* parser, unsigned position);
+/*
+ * Check if current line ends at position or contains comment.
+ */
+
 UwResult _amw_parser_error(AmwParser* parser, char* source_file_name, unsigned source_line_number,
                            unsigned line_number, unsigned char_pos, char* description, ...);
 /*
@@ -120,6 +131,12 @@ UwResult _amw_parser_error(AmwParser* parser, char* source_file_name, unsigned s
     amw_parser_error2((parser), (parser)->line_number,  \
                       (char_pos), (description) __VA_OPT__(,) __VA_ARGS__)
 
+bool _amw_find_closing_quote(UwValuePtr line, char32_t quote, unsigned start_pos, unsigned* end_pos);
+/*
+ * Search for closing quotation mark in escaped line.
+ * If found, write its position to `end_pos` and return true;
+ */
+
 UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_number,
                             char32_t quote, unsigned start_pos, unsigned* end_pos);
 /*
@@ -129,16 +146,22 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
  * set position where conversion has stopped.
  */
 
-UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsigned* end_pos);
+UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsigned* end_pos, char* allowed_terminators);
 /*
  * Parse number, either integer or float.
  * `start_pos` points to the first digit in the `current_line`.
  *
  * Leading zeros in a non-zero decimal numbers are not allowed to avoid ambiguity.
  *
- * Optional single quotes (') or underscores can be used as separators.
+ * Optional single quote (') or underscores can be used as separators.
  *
  * Return numeric value on success. Set `end_pos` to a point where conversion has stopped.
+ */
+
+static UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, unsigned* end_pos);
+/*
+ * Parse JSON value starting from `start_pos`.
+ * On success write position where parsing stopped to `end_pos`.
  */
 
 #ifdef __cplusplus
