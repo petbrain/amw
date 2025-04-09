@@ -322,12 +322,12 @@ If the key is a quoted string, it simply cannot end with a colon:
 ## Comments
 
 As in YAML, comments start from `#`.
-There are some rules where comments can appear.
+There are some rules where comments may appear.
 
 Everything that follows conversion specifier is treated as a raw value.
-Therefore, comments are not allowed immediately after conversion specifier.
-But they can follow simple values or be a part of the block if conversion specifier
-is followed by line break:
+Therefore, comments are not allowed immediately after it.
+But they may follow simple values or be a part of the nested block
+if conversion specifier is followed by line break:
 ```
 :float: 100  # numeric value
 
@@ -359,7 +359,7 @@ v
           ut labore et dolore magna aliqua.
 ```
 
-Comments can appear immediately after map keys:
+Comments may appear immediately after map keys:
 ```
     +--- block indent of nested block
     |
@@ -429,10 +429,10 @@ Comments are allowed in multi-line JSON after any element:
 
 ## Type deduction rules
 
-* `null` optionally followed by `#` or `:<SP>` or `:<LF>`: null value, otherwise it's a literal string
-* `true` | `false` optionally followed by `#` or `:<SP>` or `:<LF>`: boolean value, otherwise it's a literal string
-* `+` | `-` followed by parseable number which in turn is followed by `#` or `:<SP>` or `:<LF>`: numeric value;
+* `null` optionally followed by `#` or `:` `<SP>` or `:` `<LF>`: null value, otherwise it's a literal string
+* `true` | `false` optionally followed by `#` or `:` `<SP>` or `:` `<LF>`: boolean value, otherwise it's a literal string
+* `+` | `-` followed by parseable number which in turn is followed by `#` or `:` `<SP>` or `:` `<LF>`: numeric value;
   if followed by anything else, it's a literal string
-* `"|'`: quoted string
-* `-<SP>`: list item
-* `:<SP>` or `:<LF>` in a literal string: key/value pair of a map
+* `"` | `'`: quoted string
+* `-` `<SP>`: list item
+* `:` `<SP>` or `:` `<LF>` in a literal string: key/value pair of a map
