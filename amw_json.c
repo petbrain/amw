@@ -184,6 +184,9 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
             return amw_parser_error(parser, parser->current_indent, "Object members must be separated with comma");
         }
         start_pos++;
+        chr = skip_spaces(parser, &start_pos, __LINE__);
+        uw_return_if_error(&chr);
+
         UwValue status = parse_object_member(parser, &start_pos, &result);
         uw_return_if_error(&status);
     }}
