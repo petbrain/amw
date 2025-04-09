@@ -1390,10 +1390,13 @@ static UwResult is_kv_separator(AmwParser* parser, unsigned colon_pos,
         next_pos = uw_string_skip_spaces(current_line, next_pos);
         // cannot be end of line here because current line is R-trimmed and EOL is already checked
         chr = uw_char_at(current_line, next_pos);
-    }
-    if (chr != ':') {
-        // no conversion specifier
-        return UwBool(true);
+        if (chr != ':') {
+            // separator without conversion specifier
+            return UwBool(true);
+        }
+    } else if (chr != ':') {
+        // key not followed immediately by conversion specifier -> not a separator
+        return UwBool(false);
     }
 
     // try parsing conversion specifier
@@ -1405,8 +1408,11 @@ static UwResult is_kv_separator(AmwParser* parser, unsigned colon_pos,
         if (convspec_out) {
             *convspec_out = uw_move(&convspec);
         }
+        return UwBool(true);
     }
-    return UwBool(true);
+
+    // bad conversion specifier -> not a separator
+    return UwBool(false);
 }
 
 static UwResult check_value_end(AmwParser* parser, UwValuePtr value, unsigned end_pos,
@@ -1624,32 +1630,46 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwVal
     TRACE("not a number, pasring literal string or map");
 
 parse_literal_string_or_map:
-    {
-        // look for key-value separator
+
+    // look for key-value separator
+    for (unsigned pos = start_pos;;) {
         unsigned colon_pos;
-        if (uw_strchr(&parser->current_line, ':', start_pos, &colon_pos)) {
-
-            UwValue convspec = UwNull();
-            unsigned value_pos;
-            UwValue kvs = is_kv_separator(parser, colon_pos, &convspec, &value_pos);
-            uw_return_if_error(&kvs);
-
-            if (kvs.bool_value) {
-                // found key-value separator, get key
-                UwValue key = uw_substr(&parser->current_line, start_pos, colon_pos);
-                uw_return_if_error(&key);
-
-                if (nested_value_pos) {
-                    // key was anticipated, simply return it
-                    *nested_value_pos = value_pos;
-                    *convspec_out = uw_move(&convspec);
-                    return uw_move(&key);
-                }
-
-                // parse map
-                return parse_map(parser, &key, &convspec, value_pos);
-            }
+        if (!uw_strchr(&parser->current_line, ':', pos, &colon_pos)) {
+            break;
         }
+        UwValue convspec = UwNull();
+        unsigned value_pos;
+        UwValue kvs = is_kv_separator(parser, colon_pos, &convspec, &value_pos);
+        uw_return_if_error(&kvs);
+
+        if (kvs.bool_value) {
+            // found key-value separator, get key
+            UwValue key = uw_substr(&parser->current_line, start_pos, colon_pos);
+            uw_return_if_error(&key);
+
+            // strip trailing spaces
+            if (!uw_string_rtrim(&key)) {
+                return UwOOM();
+            }
+
+            if (nested_value_pos) {
+                // key was anticipated, simply return it
+                *nested_value_pos = value_pos;
+                *convspec_out = uw_move(&convspec);
+                return uw_move(&key);
+            }
+
+            // parse map
+            return parse_map(parser, &key, &convspec, value_pos);
+        }
+        pos = colon_pos + 1;
+    }
+
+    // separator not found
+
+    if (nested_value_pos) {
+        // expecting key, but it's a bare literal string
+        return amw_parser_error(parser, parser->current_indent, "Not a key");
     }
     return parse_literal_string(parser);
 }
