@@ -190,7 +190,7 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
 static UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, unsigned* end_pos)
 {
     if (parser->json_depth >= parser->max_json_depth) {
-        return amw_parser_error(parser, parser->current_indent, "Maximum resursion depth exceeded");
+        return amw_parser_error(parser, parser->current_indent, "Maximum recursion depth exceeded");
     }
 
     UwValue first_char = skip_spaces(parser, &start_pos, __LINE__);
