@@ -160,7 +160,7 @@ UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsi
  * Return numeric value on success. Set `end_pos` to a point where conversion has stopped.
  */
 
-static UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, unsigned* end_pos);
+UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, unsigned* end_pos);
 /*
  * Parse JSON value starting from `start_pos`.
  * On success write position where parsing stopped to `end_pos`.

@@ -192,7 +192,7 @@ static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* en
     }}
 }
 
-static UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, unsigned* end_pos)
+UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, unsigned* end_pos)
 {
     if (parser->json_depth >= parser->max_json_depth) {
         return amw_parser_error(parser, parser->current_indent, "Maximum recursion depth exceeded");
@@ -215,16 +215,15 @@ static UwResult _amw_parse_json_value(AmwParser* parser, unsigned start_pos, uns
     if (chr == '+' || chr == '-' || uw_isdigit(chr)) {
         return parse_number(parser, start_pos, end_pos);
     }
-    if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 4, "null")) {
+    if (uw_substring_eq(&parser->current_line, start_pos, start_pos + 4, "null")) {
         *end_pos = start_pos + 4;
         return UwNull();
     }
-    if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 4, "true")) {
+    if (uw_substring_eq(&parser->current_line, start_pos, start_pos + 4, "true")) {
         *end_pos = start_pos + 4;
         return UwBool(true);
     }
-    if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 5, "false")) {
-        UwValue false_value = UwBool(false);
+    if (uw_substring_eq(&parser->current_line, start_pos, start_pos + 5, "false")) {
         *end_pos = start_pos + 5;
         return UwBool(false);
     }
@@ -273,14 +272,15 @@ UwResult amw_parse_json(UwValuePtr markup)
 
     static char extra_data[] = "Extra data after parsed value";
 
-    if (_amw_comment_or_end_of_line(parser, end_pos)) {
-
-        // make sure current block has no more data
-        UwValue status = _amw_read_block_line(parser);
-        if (!parser->eof) {
-            return amw_parser_error(parser, parser->current_indent, extra_data);
-        }
+    if (!_amw_comment_or_end_of_line(parser, end_pos)) {
+        return amw_parser_error(parser, parser->current_indent, extra_data);
+    }
+    // make sure current block has no more data
+    status = _amw_read_block_line(parser);
+    if (parser->eof) {
+        // all right, no op
     } else {
+        uw_return_if_error(&status);
         return amw_parser_error(parser, parser->current_indent, extra_data);
     }
     return uw_move(&result);

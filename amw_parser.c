@@ -1212,7 +1212,7 @@ done:
         // parse float
         unsigned len = pos - start_pos;
         char number[len + 1];
-        uw_substrcopy_buf(current_line, start_pos, pos, number);
+        uw_substr_to_utf8_buf(current_line, start_pos, pos, number);
         errno = 0;
         double n = strtod(number, nullptr);
         if (errno == ERANGE) {
@@ -1603,15 +1603,15 @@ static UwResult parse_value(AmwParser* parser, unsigned* nested_value_pos, UwVal
     // check for reserved keywords
 
     TRACE("trying reserved keywords");
-    if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 4, "null")) {
+    if (uw_substring_eq(&parser->current_line, start_pos, start_pos + 4, "null")) {
         UwValue null_value = UwNull();
         return check_value_end(parser, &null_value, start_pos + 4, nested_value_pos, convspec_out);
     }
-    if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 4, "true")) {
+    if (uw_substring_eq(&parser->current_line, start_pos, start_pos + 4, "true")) {
         UwValue true_value = UwBool(true);
         return check_value_end(parser, &true_value, start_pos + 4, nested_value_pos, convspec_out);
     }
-    if (uw_substring_eq_cstr(&parser->current_line, start_pos, start_pos + 5, "false")) {
+    if (uw_substring_eq(&parser->current_line, start_pos, start_pos + 5, "false")) {
         UwValue false_value = UwBool(false);
         return check_value_end(parser, &false_value, start_pos + 5, nested_value_pos, convspec_out);
     }
