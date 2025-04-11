@@ -1203,7 +1203,6 @@ decimal_float_only:
         pos = next_pos;
 
     } else if ( ! (uw_isspace(chr) || strchr(allowed_terminators, chr))) {
-fprintf(stderr, "XXX `%c`\n", chr);
         return amw_parser_error(parser, start_pos, "Bad number");
     }
 
