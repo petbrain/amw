@@ -1,6 +1,6 @@
 #include <amw.h>
 
-static char number_terminators[] = { AMW_COMMENT, ':', ',', 0 };
+static char number_terminators[] = { AMW_COMMENT, ':', ',', '}', ']', 0 };
 
 
 static UwResult skip_spaces(AmwParser* parser, unsigned* pos, unsigned source_line)
