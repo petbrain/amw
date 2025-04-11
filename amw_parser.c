@@ -1134,25 +1134,24 @@ UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsi
     char32_t chr = uw_char_at(current_line, pos);
     if (chr == '0') {
         // check radix specifier
-        pos++;
         if (end_of_line(current_line, pos)) {
             goto done;
         }
-        switch (uw_char_at(current_line, pos)) {
+        switch (uw_char_at(current_line, pos + 1)) {
             case 'b':
             case 'B':
                 radix = 2;
-                pos++;
+                pos += 2;
                 break;
             case 'o':
             case 'O':
                 radix = 8;
-                pos++;
+                pos += 2;
                 break;
             case 'x':
             case 'X':
                 radix = 16;
-                pos++;
+                pos += 2;
                 break;
             default:
                 break;
@@ -1204,6 +1203,7 @@ decimal_float_only:
         pos = next_pos;
 
     } else if ( ! (uw_isspace(chr) || strchr(allowed_terminators, chr))) {
+fprintf(stderr, "XXX `%c`\n", chr);
         return amw_parser_error(parser, start_pos, "Bad number");
     }
 
