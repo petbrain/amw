@@ -58,10 +58,11 @@ static UwResult parse_string(AmwParser* parser, unsigned start_pos, unsigned* en
  * `start_pos` points to the opening double quotation mark (")
  */
 {
-    if (_amw_find_closing_quote(&parser->current_line, '"', start_pos + 1, end_pos)) {
-        (*end_pos)++;
+    unsigned closing_quote_pos;
+    if (_amw_find_closing_quote(&parser->current_line, '"', start_pos + 1, &closing_quote_pos)) {
+        *end_pos = closing_quote_pos + 1;
         return _amw_unescape_line(parser, &parser->current_line,
-                                  parser->line_number, '"', start_pos + 1, nullptr);
+                                  parser->line_number, '"', start_pos + 1, closing_quote_pos);
     }
     return amw_parser_error(parser, parser->current_indent, "String has no closing quote");
 }

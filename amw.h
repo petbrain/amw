@@ -140,12 +140,9 @@ bool _amw_find_closing_quote(UwValuePtr line, char32_t quote, unsigned start_pos
  */
 
 UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_number,
-                            char32_t quote, unsigned start_pos, unsigned* end_pos);
+                            char32_t quote, unsigned start_pos, unsigned end_pos);
 /*
- * Process escaped characters in the `line`.
- *
- * On success return string value and df `end_pos` is not NULL,
- * set position where conversion has stopped.
+ * Process escaped characters in the `line` from `start_pos` to `end_pos`.
  */
 
 UwResult _amw_parse_number(AmwParser* parser, unsigned start_pos, int sign, unsigned* end_pos, char* allowed_terminators);

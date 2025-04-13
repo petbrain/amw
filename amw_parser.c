@@ -456,21 +456,14 @@ static UwResult parse_literal_string(AmwParser* parser)
 }
 
 UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_number,
-                            char32_t quote, unsigned start_pos, unsigned* end_pos)
+                            char32_t quote, unsigned start_pos, unsigned end_pos)
 {
-    unsigned len = uw_strlen(line);
-    if (start_pos >= len) {
-        if (end_pos) {
-            *end_pos = start_pos;
-        }
-        return UwString();
-    }
     UwValue result = uw_create_empty_string(
-        len - start_pos,  // unescaped string can be shorter
+        end_pos - start_pos,  // unescaped string can be shorter
         uw_string_char_size(line)
     );
     unsigned pos = start_pos;
-    while (pos < len) {
+    while (pos < end_pos) {
         char32_t chr = uw_char_at(line, pos);
         if (chr == quote) {
             // closing quotation mark detected
@@ -483,7 +476,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
         } else {
             // start of escape sequence
             pos++;
-            if (end_of_line(line, pos)) {
+            if (pos >= end_pos) {
                 if (!uw_string_append(&result, chr)) {  // leave backslash in the result
                     return UwOOM();
                 }
@@ -515,7 +508,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
                     char32_t v = 0;
                     for (int i = 0; i < 3; i++) {
                         pos++;
-                        if (end_of_line(line, pos)) {
+                        if (pos >= end_pos) {
                             if (i == 0) {
                                 return amw_parser_error2(parser, line_number, pos, "Incomplete octal value");
                             }
@@ -550,7 +543,7 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
                     char32_t v = 0;
                     for (int i = 0; i < hexlen; i++) {
                         pos++;
-                        if (end_of_line(line, pos)) {
+                        if (pos >= end_pos) {
                             return amw_parser_error2(parser, line_number, pos, "Incomplete hexadecimal value");
                         }
                         char32_t c = uw_char_at(line, pos);
@@ -583,9 +576,6 @@ UwResult _amw_unescape_line(AmwParser* parser, UwValuePtr line, unsigned line_nu
             }
         }
         pos++;
-    }
-    if (end_pos) {
-        *end_pos = pos;
     }
     return uw_move(&result);
 }
@@ -672,7 +662,8 @@ static UwResult fold_lines(AmwParser* parser, UwValuePtr lines, char32_t quote, 
         }
         if (quote) {
             UwValue line_number = uw_array_item(line_numbers, i);
-            UwValue unescaped = _amw_unescape_line(parser, &line, line_number.unsigned_value, quote, 0, nullptr);
+            UwValue unescaped = _amw_unescape_line(parser, &line, line_number.unsigned_value,
+                                                   quote, 0, uw_strlen(&line));
             uw_return_if_error(&unescaped);
             if (!uw_string_append(&result, &unescaped)) {
                 return UwOOM();
@@ -725,11 +716,12 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     char32_t quote = uw_char_at(&parser->current_line, opening_quote_pos);
 
     // process first line
-    if (_amw_find_closing_quote(&parser->current_line, quote, opening_quote_pos + 1, end_pos)) {
+    unsigned closing_quote_pos;
+    if (_amw_find_closing_quote(&parser->current_line, quote, opening_quote_pos + 1, &closing_quote_pos)) {
         // single-line string
-        (*end_pos)++;
+        *end_pos = closing_quote_pos + 1;
         return _amw_unescape_line(parser, &parser->current_line, parser->line_number,
-                                  quote, opening_quote_pos + 1, nullptr);
+                                  quote, opening_quote_pos + 1, closing_quote_pos);
     }
 
     unsigned block_indent = opening_quote_pos + 1;
