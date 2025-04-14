@@ -132,7 +132,7 @@ static UwResult parse_object_member(AmwParser* parser, unsigned* pos, UwValuePtr
     uw_return_if_error(&chr);
 
     if (chr.unsigned_value != ':') {
-        return amw_parser_error(parser, parser->current_indent, "Values must be separated from keys with colon");
+        return amw_parser_error(parser, *pos, "Values must be separated from keys with colon");
     }
 
     (*pos)++;
