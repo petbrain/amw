@@ -47,8 +47,10 @@ static UwResult parse_number(AmwParser* parser, unsigned start_pos, unsigned* en
     char32_t chr = uw_char_at(&parser->current_line, start_pos);
     if (chr == '+') {
         // no op
+        start_pos++;
     } else if (chr == '-') {
         sign = -1;
+        start_pos++;
     }
     return _amw_parse_number(parser, start_pos, sign, end_pos, number_terminators);
 }
