@@ -93,9 +93,7 @@ static UwResult parse_array(AmwParser* parser, unsigned start_pos, unsigned* end
     UwValue first_item = _amw_parse_json_value(parser, start_pos, &start_pos);
     uw_return_if_error(&first_item);
 
-    if (!uw_array_append(&result, &first_item)) {
-        return UwOOM();
-    }
+    uw_expect_ok( uw_array_append(&result, &first_item) );
 
     // parse subsequent items
     for (;;) {{
@@ -114,9 +112,7 @@ static UwResult parse_array(AmwParser* parser, unsigned start_pos, unsigned* end
         UwValue item = _amw_parse_json_value(parser, start_pos + 1, &start_pos);
         uw_return_if_error(&item);
 
-        if (!uw_array_append(&result, &item)) {
-            return UwOOM();
-        }
+        uw_expect_ok( uw_array_append(&result, &item) );
     }}
 }
 
@@ -142,10 +138,7 @@ static UwResult parse_object_member(AmwParser* parser, unsigned* pos, UwValuePtr
     UwValue value = _amw_parse_json_value(parser, *pos, pos);
     uw_return_if_error(&value);
 
-    if (!uw_map_update(result, &key, &value)) {
-        return UwOOM();
-    }
-    return UwOK();
+    return uw_map_update(result, &key, &value);
 }
 
 static UwResult parse_object(AmwParser* parser, unsigned start_pos, unsigned* end_pos)

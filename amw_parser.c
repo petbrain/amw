@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <amw.h>
@@ -122,7 +123,7 @@ void amw_delete_parser(AmwParser** parser_ptr)
     release((void**) &parser, sizeof(AmwParser));
 }
 
-bool amw_set_custom_parser(AmwParser* parser, char* convspec, AmwBlockParserFunc parser_func)
+UwResult amw_set_custom_parser(AmwParser* parser, char* convspec, AmwBlockParserFunc parser_func)
 {
     UWDECL_CharPtr(key, convspec);
     UWDECL_Ptr(value, (void*) parser_func);
@@ -282,9 +283,8 @@ UwResult _amw_read_block(AmwParser* parser)
         UwValue line = uw_substr(&parser->current_line, parser->block_indent, UINT_MAX);
         uw_return_if_error(&line);
 
-        if (!uw_array_append(&lines, &line)) {
-            return UwOOM();
-        }
+        uw_expect_ok( uw_array_append(&lines, &line) );
+
         // read next line
         UwValue status = _amw_read_block_line(parser);
         if (_amw_end_of_block(&status)) {
@@ -410,9 +410,7 @@ static UwResult parse_raw_value(AmwParser* parser)
     if (uw_array_length(&lines) > 1) {
         // append one empty line for ending line break
         UWDECL_String(empty_line);
-        if (!uw_array_append(&lines, &empty_line)) {
-            return UwOOM();
-        }
+        uw_expect_ok( uw_array_append(&lines, &empty_line) );
     }
     // return concatenated lines
     return uw_array_join('\n', &lines);
@@ -430,9 +428,8 @@ static UwResult parse_literal_string(AmwParser* parser)
 
     // normalize list of lines
 
-    if (!uw_array_dedent(&lines)) {
-        return UwOOM();
-    }
+    uw_expect_ok( uw_array_dedent(&lines) );
+
     // drop empty trailing lines
     unsigned len = uw_array_length(&lines);
     while (len--) {{
@@ -446,9 +443,7 @@ static UwResult parse_literal_string(AmwParser* parser)
     // append one empty line for ending line break
     if (uw_array_length(&lines) > 1) {
         UWDECL_String(empty_line);
-        if (!uw_array_append(&lines, &empty_line)) {
-            return UwOOM();
-        }
+        uw_expect_ok( uw_array_append(&lines, &empty_line) );
     }
 
     // return concatenated lines
@@ -587,9 +582,7 @@ static UwResult fold_lines(AmwParser* parser, UwValuePtr lines, char32_t quote, 
  * If `quote` is nonzero, unescape lines.
  */
 {
-    if (!uw_array_dedent(lines)) {
-        return UwOOM();
-    }
+    uw_expect_ok( uw_array_dedent(lines) );
     unsigned len = uw_array_length(lines);
 
     // skip leading empty lines
@@ -742,9 +735,8 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
     for (;;) {{
         // append line number
         UwValue n = UwUnsigned(parser->line_number);
-        if (!uw_array_append(&line_numbers, &n)) {
-            return UwOOM();
-        }
+        uw_expect_ok( uw_array_append(&line_numbers, &n) );
+
         // append line
         if (_amw_find_closing_quote(&parser->current_line, quote, block_indent, end_pos)) {
             // final line
@@ -752,9 +744,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
             if (!uw_string_rtrim(&final_line)) {
                 return UwOOM();
             }
-            if (!uw_array_append(&lines, &final_line)) {
-                return UwOOM();
-            }
+            uw_expect_ok( uw_array_append(&lines, &final_line) );
             (*end_pos)++;
             closing_quote_detected = true;
             break;
@@ -762,9 +752,7 @@ static UwResult parse_quoted_string(AmwParser* parser, unsigned opening_quote_po
             // intermediate line
             UwValue line = uw_substr(&parser->current_line, block_indent, UINT_MAX);
             uw_return_if_error(&line);
-            if (!uw_array_append(&lines, &line)) {
-                return UwOOM();
-            }
+            uw_expect_ok( uw_array_append(&lines, &line) );
         }
         // read next line
         UwValue status = _amw_read_block_line(parser);
@@ -1274,9 +1262,7 @@ static UwResult parse_list(AmwParser* parser)
             }
             uw_return_if_error(&item);
 
-            if (!uw_array_append(&result, &item)) {
-                return UwOOM();
-            }
+            uw_expect_ok( uw_array_append(&result, &item) );
 
             UwValue status = _amw_read_block_line(parser);
             if (_amw_end_of_block(&status)) {
@@ -1335,9 +1321,7 @@ static UwResult parse_map(AmwParser* parser, UwValuePtr first_key, UwValuePtr co
             }
             uw_return_if_error(&value);
 
-            if (!uw_map_update(&result, &key, &value)) {
-                return UwOOM();
-            }
+            uw_expect_ok( uw_map_update(&result, &key, &value) );
         }
         TRACE("parse next key");
         {

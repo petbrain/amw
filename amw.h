@@ -65,7 +65,7 @@ void amw_delete_parser(AmwParser** parser_ptr);
 
 typedef UwResult (*AmwBlockParserFunc)(AmwParser* parser);
 
-bool amw_set_custom_parser(AmwParser* parser, char* convspec, AmwBlockParserFunc parser_func);
+UwResult amw_set_custom_parser(AmwParser* parser, char* convspec, AmwBlockParserFunc parser_func);
 /*
  * Set custom parser function for `convspec`.
  */
